@@ -360,6 +360,7 @@ net_shutdown(void)
 
 #include "arp.h"
 #include "ip.h"
+#include "ip6.h"
 #include "icmp.h"
 #include "udp.h"
 #include "tcp.h"
@@ -377,6 +378,10 @@ net_init(void)
     }
     if (ip_init() == -1) {
         errorf("ip_init() failure");
+        return -1;
+    }
+    if (ip6_init() == -1) {
+        errorf("ip_init6() failure");
         return -1;
     }
     if (icmp_init() == -1) {

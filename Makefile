@@ -4,6 +4,8 @@ APPS = app/udpc.exe \
        app/tcps.exe \
 
 TESTS = test/test.exe \
+        test/test0.exe \
+        test/test1.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -17,6 +19,8 @@ OBJS = util.o \
        udp.o \
        tcp.o \
        sock.o \
+       ip6.o \
+       icmp6.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -iquote .
 
