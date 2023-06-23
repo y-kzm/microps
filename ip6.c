@@ -23,6 +23,11 @@ struct ip6_hdr {
 #define ip6_flow	ip6_ctlun.ip6_un1_flow
 };
 
+const ip6_addr_t IPV6_ADDR_ANY = 
+    IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+//extern const ip_addr_t IPV6_ADDR_BROADCAST;
+
 static struct ip6_iface *ifaces;
 //static struct ip6_protocol *protocols;
 
@@ -253,7 +258,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     struct ip6_iface *iface;
     char addr[IPV6_ADDR_STR_MAX_LEN];
     
-    if (len < IPV6_HDR_LEN) {
+    if (len < IPV6_HDR_SIZE) {
         errorf("too short");
         return;
     }
@@ -263,7 +268,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         errorf("ip version error: v=%u", v);
         return;
     }
-    if (ntoh16(hdr->ip6_plen) > (len - IPV6_HDR_LEN)) {
+    if (ntoh16(hdr->ip6_plen) > (len - IPV6_HDR_SIZE)) {
         errorf("too short payload length");
         return;        
     }
@@ -280,11 +285,88 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         return;
     }
 
-    // TODO: protocol, total
+    // TODO: next, total
     debugf("dev=%s, iface=%s",
         dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)));
     ip6_dump(data, len);
 }
+
+static int
+ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
+{
+    uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
+
+    /*
+    if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_ARP) {
+        if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
+            memcpy(hwaddr, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
+        } else {
+            errorf("arp does not implement");
+            return -1;
+        }
+    }
+    */
+
+    return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);    
+}
+
+static ssize_t
+ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
+{
+    // TODO: 拡張ヘッダ処理
+    uint8_t buf[IPV6_HDR_SIZE];
+    struct ip6_hdr *hdr;
+    uint16_t plen;
+    char addr[IPV6_ADDR_STR_MAX_LEN];
+
+    hdr = (struct ip6_hdr *)buf;
+    hdr->ip6_flow = 0x0000;
+    hdr->ip6_vfc = (IP_VERSION_IPV6 << 4);
+    plen = len - IPV6_HDR_SIZE;
+    hdr->ip6_plen = hton16(plen);
+    hdr->ip6_nxt = next;
+    hdr->ip6_hlim = 0xff;
+    memcpy(hdr->ip6_src.addr8, src.addr8, IPV6_ADDR_LEN);
+    memcpy(hdr->ip6_dst.addr8, dst.addr8, IPV6_ADDR_LEN);
+
+    debugf("dev=%s, iface=%s",
+        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)));
+    ip6_dump(buf, len);
+
+    return ip6_output_device(iface, buf, plen + IPV6_HDR_SIZE, dst);
+}
+
+ssize_t
+ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
+{
+    struct ip6_iface *iface;
+    char addr[IPV6_ADDR_STR_MAX_LEN];
+    
+    if (memcmp(&src, &IPV6_ADDR_ANY, IPV6_ADDR_LEN) == 0) {
+        errorf("ip routing does not implement");
+        return -1;
+    } else {
+        iface = ip6_iface_select(src);
+        if (!iface) {
+            errorf("iface not found, src=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
+            return -1;
+        }
+        // TODO: prefixチェック，マルチキャスト対応
+        // if ()
+    }
+    if (NET_IFACE(iface)->dev->mtu < IPV6_HDR_SIZE + len) {
+        errorf("too long, dev=%s, mtu=%u < %zu",
+            NET_IFACE(iface)->dev->name, NET_IFACE(iface)->dev->mtu, IPV6_HDR_SIZE + len);
+        return -1;
+    }
+    if (ip6_output_core(iface, next, data, len, iface->unicast, dst) == -1) {
+        errorf("ip6_output_core() failure");
+        return -1;
+    }
+
+    return len;
+}
+
 
 int
 ip6_init(void)

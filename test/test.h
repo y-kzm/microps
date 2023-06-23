@@ -7,8 +7,8 @@
 #define LOOPBACK_NETMASK "255.0.0.0"
 
 #define LOOPBACK_IPV6_ADDR "::1"
-//#define LOOPBACK_IPV6_ADDR "fd00:123::1"
-#define LOOPBACK_IPv6_NETMASK "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+#define LOOPBACK_IPV6_ADDR2 "fd00:123::1"
+#define LOOPBACK_IPV6_NETMASK "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
 
 #define ETHER_TAP_NAME    "tap0"
 #define ETHER_TAP_HW_ADDR "00:00:5e:00:53:01"

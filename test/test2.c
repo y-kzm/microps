@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stddef.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -19,8 +20,8 @@ on_signal(int s)
     terminate = 1;
 }
 
-int
-main(int argc, char *argv[])
+static int
+setup(void)
 {
     struct net_device *dev;
     struct ip6_iface *iface;
@@ -35,7 +36,6 @@ main(int argc, char *argv[])
         errorf("loopback_init() failure");
         return -1;
     }
-    // TODO
     iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_NETMASK);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
@@ -49,13 +49,33 @@ main(int argc, char *argv[])
         errorf("net_run() failure");
         return -1;
     }
+    return 0;
+}
+
+static void
+cleanup(void)
+{
+    net_shutdown();
+}
+
+int
+main(int argc, char *argv[])
+{
+    ip6_addr_t src, dst;
+
+    if (setup() == -1) {
+        errorf("setup() failure");
+        return -1;
+    }
+    ip6_addr_pton(LOOPBACK_IPV6_ADDR, &src);
+    dst = src;
     while (!terminate) {
-        if (net_device_output(dev, NET_PROTOCOL_TYPE_IPV6, test_data, sizeof(test_data), NULL) == -1) {
-            errorf("net_device_output() failure");
+        if (ip6_output(58, test_data, sizeof(test_data), src, dst) == -1) {
+            errorf("ip6_output() failure");
             break;
         }
         sleep(1);
     }
-    net_shutdown();
+    cleanup();
     return 0;
 }
