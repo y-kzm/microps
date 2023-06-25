@@ -15,6 +15,7 @@
 #define IPV6_ADDR8_LEN      16
 #define IPV6_ADDR16_LEN     8
 #define IPV6_ADDR32_LEN     4
+
 #define IPV6_ADDR_STR_MAX_LEN 40 /* "ddd:ddd:ddd:ddd:ddd:ddd:ddd:ddd\0" */
 
 typedef struct {
@@ -64,6 +65,9 @@ ip6_iface_select(ip6_addr_t addr);
 
 ssize_t
 ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst);
+
+int
+ip6_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface));
 
 int
 ip6_init(void);

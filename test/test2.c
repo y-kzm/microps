@@ -6,6 +6,7 @@
 #include "util.h"
 #include "net.h"
 #include "ip6.h"
+#include "ip.h"
 
 #include "driver/loopback.h"
 
@@ -70,7 +71,7 @@ main(int argc, char *argv[])
     ip6_addr_pton(LOOPBACK_IPV6_ADDR, &src);
     dst = src;
     while (!terminate) {
-        if (ip6_output(58, test_data, sizeof(test_data), src, dst) == -1) {
+        if (ip6_output(IP_PROTOCOL_ICMPV6, test_data, sizeof(test_data), src, dst) == -1) {
             errorf("ip6_output() failure");
             break;
         }

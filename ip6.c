@@ -9,6 +9,12 @@
 #include "net.h"
 #include "ip6.h"
 
+struct ip6_protocol {
+    struct ip6_protocol *next;
+    uint8_t type;
+    void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);    
+};
+
 struct ip6_hdr {
     union {
 		uint32_t ip6_un1_flow;	/* ver(4) tc(12) flow-ID(20) */
@@ -29,14 +35,14 @@ const ip6_addr_t IPV6_ADDR_ANY =
 //extern const ip_addr_t IPV6_ADDR_BROADCAST;
 
 static struct ip6_iface *ifaces;
-//static struct ip6_protocol *protocols;
+static struct ip6_protocol *protocols;
 
 // TODO: 
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
 {
 #define NS_IN6ADDRSZ	16
-#define NS_INT16SZ	2
+#define NS_INT16SZ	    2
 	static const char xdigits_l[] = "0123456789abcdef",
 			          xdigits_u[] = "0123456789ABCDEF";
 	u_char tmp[NS_IN6ADDRSZ], *tp, *endp, *colonp;
@@ -118,52 +124,41 @@ char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
 {
     uint16_t *u16;
-    u16 = (uint16_t *)&n.addr16;
-
     int i, j;
     char *tmp;
+    int zstart = 0;
+    int zend = 0;
 
-    // Best run of zeroes
-    int zeroRunStart = 0;
-    int zeroRunEnd = 0;
+    u16 = (uint16_t *)&n.addr16;
 
     // Find the longest run of zeros for "::" short-handing
     for (i = 0; i < IPV6_ADDR16_LEN; i++) {
-        // Compute the length of the current sequence of zeroes
         for(j = i; j < IPV6_ADDR16_LEN && !u16[j]; j++) {
             // 
         }
-        // Keep track of the longest one
-        if ((j - i) > 1 && (j - i) > (zeroRunEnd - zeroRunStart)) {
-            // The symbol "::" should not be used to shorten just one zero field
-            zeroRunStart = i;
-            zeroRunEnd = j;
+        if ((j - i) > 1 && (j - i) > (zend - zstart)) {
+            zstart = i;
+            zend = j;
         }
     }
 
     // Format IPv6 address
     for (tmp = p, i = 0; i < IPV6_ADDR16_LEN; i++) {
-        // Are we inside the best run of zeroes?
-        if (i >= zeroRunStart && i < zeroRunEnd) {
-            // Append a separator
+        if (i >= zstart && i < zend) {
             *(tmp++) = ':';
-            // Skip the sequence of zeroes
-            i = zeroRunEnd - 1;
+            i = zend - 1;
         } else {
-            // Add a separator between each 16-bit word
             if (i > 0) {
                 *(tmp++) = ':';
             }
-            // Convert the current 16-bit word to string
             tmp += sprintf(tmp, "%x", ntoh16(u16[i]));
         }
     }
 
-    if (zeroRunEnd == 8) {
+    if (zend == 8) {
         *(tmp++) = ':';
     }
     *tmp = '\0';
-
     return p;
 }
 
@@ -257,6 +252,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     uint8_t v;
     struct ip6_iface *iface;
     char addr[IPV6_ADDR_STR_MAX_LEN];
+    struct ip6_protocol *proto;
     
     if (len < IPV6_HDR_SIZE) {
         errorf("too short");
@@ -285,10 +281,15 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         return;
     }
 
-    // TODO: next, total
-    debugf("dev=%s, iface=%s",
-        dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)));
+    debugf("dev=%s, iface=%s, next=0x%02x, len=%u",
+        dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE);
     ip6_dump(data, len);
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == hdr->ip6_nxt) {
+            proto->handler((uint8_t *)hdr + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen), hdr->ip6_src, hdr->ip6_dst, iface);
+            return;
+        }
+    }
 }
 
 static int
@@ -367,6 +368,29 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     return len;
 }
 
+int
+ip6_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface))
+{
+    struct ip6_protocol *entry;
+
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            errorf("already exists, type=0x%02x", entry->type);
+            return -1;
+        }
+    }
+    entry = memory_alloc(sizeof(*entry));
+    if (!entry) {
+        errorf("memory_alloc() failure");
+        return -1;
+    }
+    entry->type = type;
+    entry->handler = handler;
+    entry->next = protocols;
+    protocols = entry;
+    infof("registered, type=0x%02x", entry->type);
+    return 0;    
+}
 
 int
 ip6_init(void)
