@@ -6,10 +6,10 @@
 
 #include "ip6.h"
 
-void
+extern void
 icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
 
-int
+extern int
 icmp6_init(void);
 
 #endif

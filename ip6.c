@@ -17,72 +17,78 @@ struct ip6_protocol {
 
 struct ip6_hdr {
     union {
-		uint32_t ip6_un1_flow;	/* ver(4) tc(12) flow-ID(20) */
-		uint8_t ip6_un2_vfc;	/* ver(4) tc(12) */
-	} ip6_ctlun;
+		uint32_t ip6_un_flow;	/* ver(4) tc(12) flow-ID(20) */
+		uint8_t ip6_un_vfc;	/* ver(4) tc(12) */
+	} ip6_un;
     uint16_t ip6_plen;	        /* payload length */
 	uint8_t  ip6_nxt;	        /* next header */
 	uint8_t  ip6_hlim;	        /* hop limit */
     ip6_addr_t ip6_src;
     ip6_addr_t ip6_dst;
-#define ip6_vfc		ip6_ctlun.ip6_un2_vfc
-#define ip6_flow	ip6_ctlun.ip6_un1_flow
+#define ip6_vfc		ip6_un.ip6_un_vfc
+#define ip6_flow	ip6_un.ip6_un_flow
 };
 
-const ip6_addr_t IPV6_ADDR_ANY = 
-    IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+const ip6_addr_t IPV6_ADDR_ANY = IPV6_ADDR (
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+                    );
 //extern const ip_addr_t IPV6_ADDR_BROADCAST;
 
 static struct ip6_iface *ifaces;
 static struct ip6_protocol *protocols;
 
-// TODO: 
+// TODO: Add comment
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
 {
-#define NS_IN6ADDRSZ	16
-#define NS_INT16SZ	    2
-	static const char xdigits_l[] = "0123456789abcdef",
-			          xdigits_u[] = "0123456789ABCDEF";
-	u_char tmp[NS_IN6ADDRSZ], *tp, *endp, *colonp;
+#define INT16_SIZE 2
+	static const char xdigits_l[] = "0123456789abcdef";
+	u_char tmp[IPV6_ADDR_LEN], *tp, *endp, *colonp;
 	const char *xdigits;
 	int ch, seen_xdigits;
 	u_int val;
 
-	memset((tp = tmp), '\0', NS_IN6ADDRSZ);
-	endp = tp + NS_IN6ADDRSZ;
+	memset((tp = tmp), '\0', IPV6_ADDR_LEN);
+	endp = tp + IPV6_ADDR_LEN;
 	colonp = NULL;
-	/* Leading :: requires some special handling. */
-	if (*p == ':')
-		if (*++p != ':')
-			return (0);
+
+	if (*p == ':') {
+		if (*++p != ':') {
+			return 0;
+        }
+    }
 	seen_xdigits = 0;
 	val = 0;
 
 	while ((ch = *p++) != '\0') {
 		const char *pch;
 
-		if ((pch = strchr((xdigits = xdigits_l), ch)) == NULL)
-			pch = strchr((xdigits = xdigits_u), ch);
+		if ((pch = strchr((xdigits = xdigits_l), ch)) == NULL) {
+            ;
+        }
+            
 		if (pch != NULL) {
 			val <<= 4;
 			val |= (pch - xdigits);
-			if (++seen_xdigits > 4)
-				return (0);
+			if (++seen_xdigits > 4) {
+				return 0;
+            }
 			continue;
 		}
 		if (ch == ':') {
 			if (!seen_xdigits) {
-				if (colonp)
-					return (0);
+				if (colonp) {
+					return 0;
+                }
 				colonp = tp;
 				continue;
 			} else if (*p == '\0') {
-				return (0);
+				return 0;
 			}
-			if (tp + NS_INT16SZ > endp)
-				return (0);
+			if (tp + INT16_SIZE > endp) {
+				return 0;
+            }
 			*tp++ = (u_char) (val >> 8) & 0xff;
 			*tp++ = (u_char) val & 0xff;
 			seen_xdigits = 0;
@@ -91,16 +97,13 @@ ip6_addr_pton(const char *p, ip6_addr_t *n)
 		}
 	}
 	if (seen_xdigits) {
-		if (tp + NS_INT16SZ > endp)
-			return (0);
+		if (tp + INT16_SIZE > endp) {
+			return 0;
+        }
 		*tp++ = (u_char) (val >> 8) & 0xff;
 		*tp++ = (u_char) val & 0xff;
 	}
 	if (colonp != NULL) {
-		/*
-		 * Since some memmove()'s erroneously fail to handle
-		 * overlapping regions, we'll do the shift by hand.
-		 */
 		const int n = tp - colonp;
 		int i;
 
@@ -114,12 +117,12 @@ ip6_addr_pton(const char *p, ip6_addr_t *n)
 	}
 	if (tp != endp)
 		return (0);
-	memcpy(n->addr8, tmp, NS_IN6ADDRSZ);
+	memcpy(n->addr8, tmp, IPV6_ADDR_LEN);
 
 	return 0;
 }
 
-// TODO: 
+// TODO: Add comment
 char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
 {
@@ -128,12 +131,11 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
     char *tmp;
     int zstart = 0;
     int zend = 0;
-
     u16 = (uint16_t *)&n.addr16;
 
     // Find the longest run of zeros for "::" short-handing
-    for (i = 0; i < IPV6_ADDR16_LEN; i++) {
-        for(j = i; j < IPV6_ADDR16_LEN && !u16[j]; j++) {
+    for (i = 0; i < IPV6_ADDR_LEN16; i++) {
+        for(j = i; j < IPV6_ADDR_LEN16 && !u16[j]; j++) {
             // 
         }
         if ((j - i) > 1 && (j - i) > (zend - zstart)) {
@@ -141,9 +143,8 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
             zend = j;
         }
     }
-
     // Format IPv6 address
-    for (tmp = p, i = 0; i < IPV6_ADDR16_LEN; i++) {
+    for (tmp = p, i = 0; i < IPV6_ADDR_LEN16; i++) {
         if (i >= zstart && i < zend) {
             *(tmp++) = ':';
             i = zend - 1;
@@ -154,7 +155,6 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
             tmp += sprintf(tmp, "%x", ntoh16(u16[i]));
         }
     }
-
     if (zend == 8) {
         *(tmp++) = ':';
     }
@@ -275,9 +275,9 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         return;
     }
 
-    // TODO: 要確認
+    // TODO: Check
     if (memcmp(&hdr->ip6_dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-        // TODO: マルチキャスの確認
+        // TODO: Multicast
         return;
     }
 
@@ -297,6 +297,7 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
 {
     uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
 
+    // TODO: FLAG_NEED_ND
     /*
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_ARP) {
         if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
@@ -314,7 +315,8 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
 static ssize_t
 ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
 {
-    // TODO: 拡張ヘッダ処理
+    // TODO: extension headers
+
     uint8_t buf[IPV6_HDR_SIZE];
     struct ip6_hdr *hdr;
     uint16_t plen;
@@ -352,8 +354,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
             errorf("iface not found, src=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
             return -1;
         }
-        // TODO: prefixチェック，マルチキャスト対応
-        // if ()
+        // TODO: Multicast, Check prefix
     }
     if (NET_IFACE(iface)->dev->mtu < IPV6_HDR_SIZE + len) {
         errorf("too long, dev=%s, mtu=%u < %zu",
