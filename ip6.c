@@ -7,38 +7,24 @@
 
 #include "util.h"
 #include "net.h"
+#include "ether.h"
 #include "ip6.h"
 
 struct ip6_protocol {
     struct ip6_protocol *next;
+    char name[16];
     uint8_t type;
     void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);    
 };
 
-struct ip6_hdr {
-    union {
-		uint32_t ip6_un_flow;	/* ver(4) tc(12) flow-ID(20) */
-		uint8_t ip6_un_vfc;	/* ver(4) tc(12) */
-	} ip6_un;
-    uint16_t ip6_plen;	        /* payload length */
-	uint8_t  ip6_nxt;	        /* next header */
-	uint8_t  ip6_hlim;	        /* hop limit */
-    ip6_addr_t ip6_src;
-    ip6_addr_t ip6_dst;
-#define ip6_vfc		ip6_un.ip6_un_vfc
-#define ip6_flow	ip6_un.ip6_un_flow
-};
-
-const ip6_addr_t IPV6_ADDR_ANY = IPV6_ADDR (
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-                    );
-//extern const ip_addr_t IPV6_ADDR_BROADCAST;
+const ip6_addr_t IPV6_ADDR_ANY = 
+    IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
+    IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xff, 0x00, 0x00, 0x00);
 
 static struct ip6_iface *ifaces;
-static struct ip6_protocol *protocols;
+static struct ip6_protocol *protocols; 
 
-// TODO: Add comment
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
 {
@@ -122,7 +108,6 @@ ip6_addr_pton(const char *p, ip6_addr_t *n)
 	return 0;
 }
 
-// TODO: Add comment
 char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
 {
@@ -133,7 +118,7 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
     int zend = 0;
     u16 = (uint16_t *)&n.addr16;
 
-    // Find the longest run of zeros for "::" short-handing
+    /* Find the longest run of zeros for "::" short-handing */
     for (i = 0; i < IPV6_ADDR_LEN16; i++) {
         for(j = i; j < IPV6_ADDR_LEN16 && !u16[j]; j++) {
             // 
@@ -143,7 +128,7 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
             zend = j;
         }
     }
-    // Format IPv6 address
+    /* Format IPv6 address */
     for (tmp = p, i = 0; i < IPV6_ADDR_LEN16; i++) {
         if (i >= zstart && i < zend) {
             *(tmp++) = ':';
@@ -168,7 +153,7 @@ ip6_dump(const uint8_t *data, size_t len)
     struct ip6_hdr *hdr;
     uint8_t v, tc;
     uint32_t flow;
-    char addr[IPV6_ADDR_STR_MAX_LEN];
+    char addr[IPV6_ADDR_STR_LEN];
 
     flockfile(stderr);
     hdr = (struct ip6_hdr *)data;
@@ -181,12 +166,21 @@ ip6_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "       plen: %u byte\n", ntoh16(hdr->ip6_plen));
     fprintf(stderr, "       next: %u\n", hdr->ip6_nxt);
     fprintf(stderr, "       hlim: %u\n", hdr->ip6_hlim);
-    fprintf(stderr, "        src: %s\n", ip6_addr_ntop(hdr->ip6_src, addr, sizeof(addr))); 
+    fprintf(stderr, "        src: %s\n", ip6_addr_ntop(hdr->ip6_src, addr, sizeof(addr)));
     fprintf(stderr, "        dst: %s\n", ip6_addr_ntop(hdr->ip6_dst, addr, sizeof(addr)));
 #ifdef HEXDUMP
     hexdump(stderr, data, len);
 #endif
     funlockfile(stderr);
+}
+
+static int
+is_ipv6multicast(const ip6_addr_t *addr)
+{
+    if (addr->addr8[0] == 0xff) {
+        return 0;
+    }
+    return -1;
 }
 
 struct ip6_iface *
@@ -216,8 +210,8 @@ ip6_iface_alloc(const char *unicast, const char *prefix)
 int
 ip6_iface_register(struct net_device *dev, struct ip6_iface *iface)
 {
-    char addr1[IPV6_ADDR_STR_MAX_LEN];
-    char addr2[IPV6_ADDR_STR_MAX_LEN];
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
 
     if (net_device_add_iface(dev, NET_IFACE(iface)) == -1) {
         errorf("net_device_add_iface() failure");
@@ -225,7 +219,7 @@ ip6_iface_register(struct net_device *dev, struct ip6_iface *iface)
     }
     iface->next = ifaces;
     ifaces = iface;
-    infof("registered: dev=%s, unicast=%s, netmask=%s",
+    infof("registered: dev=%s, unicast=%s, prefix=%s",
         dev->name,
         ip6_addr_ntop(iface->unicast, addr1, sizeof(addr1)),
         ip6_addr_ntop(iface->prefix, addr2, sizeof(addr2)));
@@ -251,7 +245,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     struct ip6_hdr *hdr;
     uint8_t v;
     struct ip6_iface *iface;
-    char addr[IPV6_ADDR_STR_MAX_LEN];
+    char addr[IPV6_ADDR_STR_LEN];
     struct ip6_protocol *proto;
     
     if (len < IPV6_HDR_SIZE) {
@@ -275,14 +269,16 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         return;
     }
 
-    // TODO: Check
     if (memcmp(&hdr->ip6_dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-        // TODO: Multicast
-        return;
+        if (is_ipv6multicast(&hdr->ip6_dst) != 0) {
+            return;
+        }
     }
 
-    debugf("dev=%s, iface=%s, next=0x%02x, len=%u",
-        dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE);
+    // TODO: 拡張ヘッダを飛ばすループ > sakai-sanの実装に参考あり
+
+    debugf("dev=%s, iface=%s, next=%u, len=%u, frame=%u",
+        dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE + ETHER_HDR_SIZE);
     ip6_dump(data, len);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->ip6_nxt) {
@@ -298,16 +294,7 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
     uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
 
     // TODO: FLAG_NEED_ND
-    /*
-    if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_ARP) {
-        if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
-            memcpy(hwaddr, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
-        } else {
-            errorf("arp does not implement");
-            return -1;
-        }
-    }
-    */
+    memcpy(hwaddr, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
 
     return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);    
 }
@@ -320,12 +307,12 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     uint8_t buf[IPV6_HDR_SIZE];
     struct ip6_hdr *hdr;
     uint16_t plen;
-    char addr[IPV6_ADDR_STR_MAX_LEN];
+    char addr[IPV6_ADDR_STR_LEN];
 
     hdr = (struct ip6_hdr *)buf;
     hdr->ip6_flow = 0x0000;
     hdr->ip6_vfc = (IP_VERSION_IPV6 << 4);
-    plen = len - IPV6_HDR_SIZE;
+    plen = len;
     hdr->ip6_plen = hton16(plen);
     hdr->ip6_nxt = next;
     hdr->ip6_hlim = 0xff;
@@ -343,7 +330,7 @@ ssize_t
 ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
 {
     struct ip6_iface *iface;
-    char addr[IPV6_ADDR_STR_MAX_LEN];
+    char addr[IPV6_ADDR_STR_LEN];
     
     if (memcmp(&src, &IPV6_ADDR_ANY, IPV6_ADDR_LEN) == 0) {
         errorf("ip routing does not implement");
@@ -370,13 +357,13 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
 }
 
 int
-ip6_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface))
+ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface))
 {
     struct ip6_protocol *entry;
 
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
-            errorf("already exists, type=0x%02x", entry->type);
+            errorf("already exists, type=%s(0x%02x), exist=%s(0x%02x)", name, type, entry->name, entry->type);
             return -1;
         }
     }
@@ -385,11 +372,12 @@ ip6_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t 
         errorf("memory_alloc() failure");
         return -1;
     }
+    strncpy(entry->name, name, sizeof(entry->name)-1);
     entry->type = type;
     entry->handler = handler;
     entry->next = protocols;
     protocols = entry;
-    infof("registered, type=0x%02x", entry->type);
+    infof("registered, type=%s(0x%02x)", entry->name, entry->type);
     return 0;    
 }
 

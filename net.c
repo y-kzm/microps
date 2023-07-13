@@ -190,6 +190,7 @@ net_input_handler(uint16_t type, const uint8_t *data, size_t len, struct net_dev
         }
     }
     /* unsupported protocol */
+    debugf("drop %0x04x", type);
     return 0;
 }
 

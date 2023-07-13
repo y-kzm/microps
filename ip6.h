@@ -7,43 +7,61 @@
 
 #include "net.h"
 
-#define IP_VERSION_IPV6     6
+#define IP_VERSION_IPV6 6
 
-#define IPV6_HDR_SIZE       40
+#define IPV6_HDR_SIZE 40
+
+#define IPV6_TOTAL_SIZE_MAX UINT16_MAX /* maximum value of uint16 */
+#define IPV6_PAYLOAD_SIZE_MAX (IPV6_TOTAL_SIZE_MAX - IPV6_HDR_SIZE)
 
 #define IPV6_ADDR_LEN       16
 #define IPV6_ADDR_LEN16     8
 #define IPV6_ADDR_LEN32     4
 
-#define IPV6_ADDR_STR_MAX_LEN   40 /* "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
+#define IPV6_ADDR_STR_LEN   40 /* max len "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
 
-#define IPV6_ADDR(  x1, x2,  x3,  x4,  x5,  x6,  x7,  x8,  \
-                    x9, x10, x11, x12, x13, x14, x15, x16) \
-                {{{ x1, x2,  x3,  x4,  x5,  x6,  x7,  x8,  \
-                    x9, x10, x11, x12, x13, x14, x15, x16 }}}
+/* protpcpl number */
+#define IP_PROTOCOL_ICMPV6  0x3a
+
+#define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
 
 typedef struct {
     union {
         uint8_t __addr8[16];
         uint16_t __addr16[8];
-        // uint32_t __addr32[4];
     } __addr;
 #define addr8   __addr.__addr8
 #define addr16  __addr.__addr16
-// #define addr32  __addr.__addr32
 } ip6_addr_t;
+
+#define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
+    x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
 
 struct ip6_iface {
     struct net_iface iface;
     struct ip6_iface *next;
     ip6_addr_t unicast;
     ip6_addr_t prefix;
-    // uint8_t prefixlen;
-    // uint32_t scope_id;
+    uint8_t prefixlen;
+    uint32_t scope_id;
+};
+
+struct ip6_hdr {
+    union {
+		uint32_t ip6_un_flow;	    /* ver(4) tc(8) flow-ID(20) */
+		uint8_t ip6_un_vfc;	        /* ver(4) tc(8) */
+	} ip6_un;
+    uint16_t ip6_plen;	            /* payload length */
+	uint8_t  ip6_nxt;	            /* next header */
+	uint8_t  ip6_hlim;	            /* hop limit */
+    ip6_addr_t ip6_src;
+    ip6_addr_t ip6_dst;
+#define ip6_vfc		ip6_un.ip6_un_vfc
+#define ip6_flow	ip6_un.ip6_un_flow
 };
 
 extern const ip6_addr_t IPV6_ADDR_ANY;
-//extern const ip_addr_t IP_ADDR_BROADCAST;
+extern const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX;
 
 extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);
@@ -64,7 +82,7 @@ extern ssize_t
 ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst);
 
 extern int
-ip6_protocol_register(uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface));
+ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface));
 
 extern int
 ip6_init(void);

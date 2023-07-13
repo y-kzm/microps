@@ -5,8 +5,8 @@
 
 #include "util.h"
 #include "net.h"
-#include "ip6.h"
 #include "ip.h"
+#include "ip6.h"
 
 #include "driver/loopback.h"
 
@@ -21,9 +21,18 @@ on_signal(int s)
     terminate = 1;
 }
 
-static int
-setup(void)
+static void
+cleanup(void)
 {
+    net_shutdown();
+}
+
+int
+main(int argc, char *argv[])
+{
+    ip6_addr_t src, dst;
+    size_t offset = IPV6_HDR_SIZE;
+
     struct net_device *dev;
     struct ip6_iface *iface;
 
@@ -50,29 +59,14 @@ setup(void)
         errorf("net_run() failure");
         return -1;
     }
-    return 0;
-}
 
-static void
-cleanup(void)
-{
-    net_shutdown();
-}
-
-int
-main(int argc, char *argv[])
-{
-    ip6_addr_t src, dst;
-
-    if (setup() == -1) {
-        errorf("setup() failure");
-        return -1;
-    }
     ip6_addr_pton(LOOPBACK_IPV6_ADDR, &src);
-    dst = src;
+    ip6_addr_pton(LOOPBACK_IPV6_ADDR, &dst);
     while (!terminate) {
-        if (ip6_output(IP_PROTOCOL_ICMPV6, test_data, sizeof(test_data), src, dst) == -1) {
-            errorf("ip6_output() failure");
+        //if (ip6_output(IP_PROTOCOL_ICMPV6, test_data, sizeof(test_data), src, dst) == -1) {
+        if (ip6_output(IP_PROTOCOL_ICMPV6, test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
+        //if (ip6_output(IP_PROTOCOL_ICMPV6, NULL, 40, src, dst) == -1) {
+            errorf("failure");
             break;
         }
         sleep(1);

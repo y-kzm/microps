@@ -65,6 +65,15 @@ ether_addr_ntop(const uint8_t *n, char *p, size_t size)
     return p;
 }
 
+static int
+isether_ipv6multicast(const uint8_t *n)
+{
+    if (n[0] == 0x33 && n[1] == 0x33) {
+        return 0; 
+    }
+    return -1;
+}
+
 static void
 ether_dump(const uint8_t *frame, size_t flen)
 {
@@ -110,6 +119,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     ssize_t flen;
     struct ether_hdr *hdr;
     uint16_t type;
+    char addr[ETHER_ADDR_STR_LEN];
 
     flen = callback(dev, frame, sizeof(frame));
     if (flen < (ssize_t)sizeof(*hdr)) {
@@ -119,8 +129,11 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     hdr = (struct ether_hdr *)frame;
     if (memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0) {
         if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
-            /* for other host */
-            return -1;
+            if (isether_ipv6multicast(hdr->dst) != 0) {
+                /* for other host */
+                debugf("for other host %s", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
+                return -1;
+            }
         }
     }
     type = ntoh16(hdr->type);

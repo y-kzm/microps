@@ -24,7 +24,6 @@
 #define IP_PROTOCOL_ICMP    0x01
 #define IP_PROTOCOL_TCP     0x06
 #define IP_PROTOCOL_UDP     0x11
-#define IP_PROTOCOL_ICMPV6  0x3a
 
 typedef uint32_t ip_addr_t;
 
