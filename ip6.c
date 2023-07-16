@@ -288,13 +288,17 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
 }
 
+#include "icmp6.h"
 static int
 ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
 {
     uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
 
     // TODO: FLAG_NEED_ND
-    memcpy(hwaddr, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
+    // 33:33:ff:00:00:01
+    uint8_t n[ETHER_ADDR_LEN];
+    ether_addr_pton("32:56:02:9b:c4:df", n);
+    memcpy(hwaddr, n, NET_IFACE(iface)->dev->alen);
 
     return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);    
 }
@@ -304,10 +308,11 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
 {
     // TODO: extension headers
 
-    uint8_t buf[IPV6_HDR_SIZE];
+    uint8_t buf[IPV6_TOTAL_SIZE_MAX];
     struct ip6_hdr *hdr;
     uint16_t plen;
     char addr[IPV6_ADDR_STR_LEN];
+
 
     hdr = (struct ip6_hdr *)buf;
     hdr->ip6_flow = 0x0000;
@@ -316,14 +321,14 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     hdr->ip6_plen = hton16(plen);
     hdr->ip6_nxt = next;
     hdr->ip6_hlim = 0xff;
-    memcpy(hdr->ip6_src.addr8, src.addr8, IPV6_ADDR_LEN);
-    memcpy(hdr->ip6_dst.addr8, dst.addr8, IPV6_ADDR_LEN);
+    hdr->ip6_src = src; 
+    hdr->ip6_dst = dst;
+    memcpy(hdr+1, data, len);  //TODO
+    debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
+        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), len, sizeof*hdr);
+    ip6_dump(buf, sizeof(*hdr));
 
-    debugf("dev=%s, iface=%s",
-        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)));
-    ip6_dump(buf, len);
-
-    return ip6_output_device(iface, buf, plen + IPV6_HDR_SIZE, dst);
+    return ip6_output_device(iface, buf, len + sizeof(*hdr), dst);
 }
 
 ssize_t
@@ -347,12 +352,12 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
         errorf("too long, dev=%s, mtu=%u < %zu",
             NET_IFACE(iface)->dev->name, NET_IFACE(iface)->dev->mtu, IPV6_HDR_SIZE + len);
         return -1;
-    }
+    }    
     if (ip6_output_core(iface, next, data, len, iface->unicast, dst) == -1) {
         errorf("ip6_output_core() failure");
         return -1;
     }
-
+    
     return len;
 }
 
