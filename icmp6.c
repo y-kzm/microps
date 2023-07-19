@@ -110,6 +110,11 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     case ICMPV6_TYPE_ECHOREPLY:
         break;
     case ICMPV6_TYPE_ECHO:
+        icmp6_dump(data, len);
+        if (memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
+            //
+        }
+        icmp6_output(ICMPV6_TYPE_ECHOREPLY, hdr->icmp6_code, hdr->icmp6_flag_reserved, (uint8_t *)(hdr + 1), len - sizeof(*hdr), dst, src);
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
         break;
@@ -144,7 +149,9 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
     struct icmp6_hdr *hdr;
     size_t msg_len;
     char addr1[IPV6_ADDR_STR_LEN];
-    char addr2[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];  
+    struct ip6_pseudo_hdr pseudo;
+    uint16_t psum = 0;
 
     hdr = (struct icmp6_hdr *)buf;
     hdr->icmp6_type = type;
@@ -153,10 +160,16 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
     hdr->icmp6_flag_reserved = flags;
     memcpy(hdr + 1, data, len);
     msg_len = sizeof(*hdr) + len;
-    // TODO: include ipv6 header
-    /*
-    hdr->icmp6_sum = cksum16((uint16_t *)hdr, msg_len, 0);
-    */
+  
+   /* pseudo header */
+    pseudo.src = src;
+    pseudo.dst = dst;
+    pseudo.len = hton16(msg_len);
+    pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
+    pseudo.nxt = IP_PROTOCOL_ICMPV6;
+    psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
+    hdr->icmp6_sum = cksum16((uint16_t *)buf, msg_len, psum);
+
     debugf("%s => %s, type=(%u), len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),

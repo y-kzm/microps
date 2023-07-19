@@ -28,7 +28,8 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     }
     ns = (struct nd_neighbor_solicit *)data;
 
-    if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8)) {
+    if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) != 0
+        && memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
         errorf("bad dstination addr");
         return;
     }
@@ -50,7 +51,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     uint8_t buf[ICMPV6_BUFSIZ];
     struct nd_neighbor_adv *na;
     struct nd_lladdr_opt *opt;
-    struct ip6_hdr pseudo;
+    struct ip6_pseudo_hdr pseudo;
     size_t msg_len;
     uint16_t psum = 0;
     char addr1[IPV6_ADDR_STR_LEN];
@@ -70,25 +71,23 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     opt->len = 1;
     memcpy(opt->lladdr, lladdr, ETHER_ADDR_LEN);
 
-    msg_len = sizeof(*na) + sizeof(*opt); 
+    msg_len = sizeof(*na) + sizeof(*opt) + len; 
     memcpy(buf + msg_len, data, len);
 
     /* pseudo header */
-    pseudo.ip6_flow = 0x0000;
-    pseudo.ip6_vfc = (IP_VERSION_IPV6 << 4);
-    pseudo.ip6_plen = msg_len + len;
-    pseudo.ip6_nxt = IP_PROTOCOL_ICMPV6;
-    pseudo.ip6_hlim = 0xff;
-    pseudo.ip6_src = src;
-    pseudo.ip6_dst = dst;
+    pseudo.src = src;
+    pseudo.dst = dst;
+    pseudo.len = hton16(msg_len);
+    pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
+    pseudo.nxt = IP_PROTOCOL_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
-    na->nd_ns_sum = cksum16((uint16_t *)na, msg_len + len, psum);
-    na->nd_ns_sum = hton16(0x6c9e); // TODO: wrong chksum
+    na->nd_ns_sum = cksum16((uint16_t *)buf, msg_len, psum);
+    //na->nd_ns_sum = hton16(0x6c9e); // TODO: wrong chksum
 
     debugf("%s => %s, type=(%u), len=%zu, +msg_len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         na->nd_na_type, len, msg_len);
     icmp6_dump((uint8_t *)na, msg_len);
-    return ip6_output(IP_PROTOCOL_ICMPV6, buf, msg_len + len, src, dst);
+    return ip6_output(IP_PROTOCOL_ICMPV6, buf, msg_len, src, dst);
 }

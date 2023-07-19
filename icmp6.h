@@ -14,8 +14,8 @@
 #define ICMPV6_TYPE_PARAM_PROBLEM   4
 
 /* informational messages */
-#define ICMPV6_TYPE_ECHOREPLY       128
-#define ICMPV6_TYPE_ECHO            129
+#define ICMPV6_TYPE_ECHO            128
+#define ICMPV6_TYPE_ECHOREPLY       129
 #define ICMPV6_TYPE_ROUTER_SOL      133
 #define ICMPV6_TYPE_ROUTER_ADV      134
 #define ICMPV6_TYPE_NEIGHBOR_SOL    135

@@ -60,6 +60,14 @@ struct ip6_hdr {
 #define ip6_flow	ip6_un.ip6_un_flow
 };
 
+struct ip6_pseudo_hdr {
+    ip6_addr_t src;
+    ip6_addr_t dst;
+    uint32_t len; /* upper-layer packet length */
+    uint8_t zero[3];
+    uint8_t nxt;
+};
+
 extern const ip6_addr_t IPV6_ADDR_ANY;
 extern const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX;
 
