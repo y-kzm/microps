@@ -112,7 +112,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     case ICMPV6_TYPE_ECHO:
         icmp6_dump(data, len);
         if (memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-            //
+            dst = iface->unicast;
         }
         icmp6_output(ICMPV6_TYPE_ECHOREPLY, hdr->icmp6_code, hdr->icmp6_flag_reserved, (uint8_t *)(hdr + 1), len - sizeof(*hdr), dst, src);
         break;
@@ -160,7 +160,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
     hdr->icmp6_flag_reserved = flags;
     memcpy(hdr + 1, data, len);
     msg_len = sizeof(*hdr) + len;
-  
+
    /* pseudo header */
     pseudo.src = src;
     pseudo.dst = dst;

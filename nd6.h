@@ -54,7 +54,8 @@ struct nd_lladdr_opt {
 
 
 
-
+extern int
+nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr);
 
 extern void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);

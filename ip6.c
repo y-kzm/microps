@@ -9,6 +9,7 @@
 #include "net.h"
 #include "ether.h"
 #include "ip6.h"
+#include "nd6.h"
 
 struct ip6_protocol {
     struct ip6_protocol *next;
@@ -17,13 +18,13 @@ struct ip6_protocol {
     void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);    
 };
 
+static struct ip6_iface *ifaces;
+static struct ip6_protocol *protocols; 
+
 const ip6_addr_t IPV6_ADDR_ANY = 
     IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
     IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xff, 0x00, 0x00, 0x00);
-
-static struct ip6_iface *ifaces;
-static struct ip6_protocol *protocols; 
 
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
@@ -174,15 +175,6 @@ ip6_dump(const uint8_t *data, size_t len)
     funlockfile(stderr);
 }
 
-static int
-is_ipv6multicast(const ip6_addr_t *addr)
-{
-    if (addr->addr8[0] == 0xff) {
-        return 0;
-    }
-    return -1;
-}
-
 struct ip6_iface *
 ip6_iface_alloc(const char *unicast, const char *prefix)
 {
@@ -270,12 +262,10 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
 
     if (memcmp(&hdr->ip6_dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-        if (is_ipv6multicast(&hdr->ip6_dst) != 0) {
+        if (hdr->ip6_dst.addr8[0] != 0xff) {
             return;
         }
     }
-
-    // TODO: 拡張ヘッダを飛ばすループ > sakai-sanの実装に参考あり
 
     debugf("dev=%s, iface=%s, next=%u, len=%u, frame=%u",
         dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE + ETHER_HDR_SIZE);
@@ -293,12 +283,16 @@ static int
 ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
 {
     uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
+    int ret;
 
-    // TODO: FLAG_NEED_ND
-    // 33:33:ff:00:00:01
-    uint8_t n[ETHER_ADDR_LEN];
-    ether_addr_pton("32:56:02:9b:c4:df", n);
-    memcpy(hwaddr, n, NET_IFACE(iface)->dev->alen);
+    if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_RESOLVE) {
+        // ipv4 -> broadcast; ipv6 -> multicast; 
+        // TODO: ifaceに受信すべきマルチキャストを登録する
+        ret = nd6_resolve(NET_IFACE(iface), dst, hwaddr);
+        if (ret != 1) {
+            return ret;
+        }
+    }   
 
     return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);    
 }

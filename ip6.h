@@ -10,20 +10,15 @@
 #define IP_VERSION_IPV6 6
 
 #define IPV6_HDR_SIZE 40
-
-#define IPV6_TOTAL_SIZE_MAX UINT16_MAX /* maximum value of uint16 */
+#define IPV6_TOTAL_SIZE_MAX UINT16_MAX      /* maximum value of uint16 */
 #define IPV6_PAYLOAD_SIZE_MAX (IPV6_TOTAL_SIZE_MAX - IPV6_HDR_SIZE)
 
-#define IPV6_ADDR_LEN       16
-#define IPV6_ADDR_LEN16     8
-#define IPV6_ADDR_LEN32     4
-
-#define IPV6_ADDR_STR_LEN   40 /* max len "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
-
 /* protpcpl number */
-#define IP_PROTOCOL_ICMPV6  0x3a
+#define IP_PROTOCOL_ICMPV6  58  /* 0x3a */
 
-#define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
+#define IPV6_ADDR_STR_LEN   40      /* "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
+#define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
+    x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
 
 typedef struct {
     union {
@@ -34,8 +29,9 @@ typedef struct {
 #define addr16  __addr.__addr16
 } ip6_addr_t;
 
-#define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
-    x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
+#define IPV6_ADDR_LEN       16
+#define IPV6_ADDR_LEN16     8
+#define IPV6_ADDR_LEN32     4
 
 struct ip6_iface {
     struct net_iface iface;
@@ -63,13 +59,15 @@ struct ip6_hdr {
 struct ip6_pseudo_hdr {
     ip6_addr_t src;
     ip6_addr_t dst;
-    uint32_t len; /* upper-layer packet length */
+    uint32_t len;       /* upper-layer packet length */
     uint8_t zero[3];
     uint8_t nxt;
 };
 
 extern const ip6_addr_t IPV6_ADDR_ANY;
 extern const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX;
+#define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
+
 
 extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);

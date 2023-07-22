@@ -147,7 +147,7 @@ ether_setup_helper(struct net_device *dev)
 {
     dev->type = NET_DEVICE_TYPE_ETHERNET;
     dev->mtu = ETHER_PAYLOAD_SIZE_MAX;
-    dev->flags = (NET_DEVICE_FLAG_BROADCAST | NET_DEVICE_FLAG_NEED_ARP);
+    dev->flags = (NET_DEVICE_FLAG_BROADCAST | NET_DEVICE_FLAG_NEED_RESOLVE);
     dev->hlen = ETHER_HDR_SIZE;
     dev->alen = ETHER_ADDR_LEN;
     memcpy(dev->broadcast, ETHER_ADDR_BROADCAST, ETHER_ADDR_LEN);

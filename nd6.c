@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "platform.h"
 
@@ -12,12 +13,173 @@
 #include "icmp6.h"
 #include "nd6.h"
 
+#define ND6_CACHE_SIZE    1024
+#define ND6_CACHE_TIMEOUT 30 /* seconds */
+
+#define ND6_STATE_NONE        0
+#define ND6_STATE_INCOMPLETE  1
+#define ND6_STATE_REACHABLE   2
+#define ND6_STATE_STALE       3
+#define ND6_STATE_DELAY       4
+#define ND6_STATE_PROBE       5
+#define ND6_STATE_PERMANENT   6
+
+struct nd6_cache {
+    unsigned char state; 
+    ip6_addr_t ip6addr;
+    uint8_t lladdr[ETHER_ADDR_LEN];
+    int isrouter;           /* typedef int bool */
+    struct timeval timestamp;
+    // device
+    // dad timeout
+};
+
+static mutex_t mutex = MUTEX_INITIALIZER;
+static struct nd6_cache caches[ND6_CACHE_SIZE];
+
+/*
+ * Neighbor Cache
+ *
+ */
+static struct nd6_cache *
+nd6_cache_alloc(void) 
+{
+    struct nd6_cache *entry, *oldest = NULL;
+
+    /**
+     * ./util.h:#define countof(x) ((sizeof(x) / sizeof(*x)))
+     * ./util.h:#define tailof(x) (x + countof(x))
+     */
+    for (entry = caches; entry < tailof(caches); entry++) {
+        if (entry->state == ND6_STATE_NONE) {
+            return entry;
+        }
+        if (!oldest || timercmp(&oldest->timestamp, &entry->timestamp, >)) {
+            oldest = entry;
+        }
+    }
+    return oldest;
+}
+
+static struct nd6_cache *
+nd6_cache_select(ip6_addr_t ip6addr)
+{
+    struct nd6_cache *entry;
+
+    for (entry = caches; entry < tailof(caches); entry++) {
+        if (entry->state != ND6_STATE_NONE && memcmp(&entry->ip6addr, &ip6addr, IPV6_ADDR_LEN) == 0) {
+            return entry;
+        }
+    }
+    return NULL; 
+}
+
+static struct nd6_cache *
+nd6_cache_update(ip6_addr_t ip6addr, uint8_t *lladdr)
+{
+    struct nd6_cache *cache;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
+
+    cache = nd6_cache_select(ip6addr);
+    if (!cache) {
+        /* not found */
+        return NULL;
+    }
+    cache->state = ND6_STATE_REACHABLE;
+    memcpy(cache->lladdr, lladdr, ETHER_ADDR_LEN);
+    gettimeofday(&cache->timestamp, NULL);
+    debugf("UPDATE: ip6addr=%s, lladdr=%s", ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)), ether_addr_ntop(lladdr, addr2, sizeof(addr2)));
+    return cache; 
+}
+
+static struct nd6_cache *
+nd6_cache_insert(ip6_addr_t ip6addr, const uint8_t *lladdr)
+{
+    struct nd6_cache *cache;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
+
+    cache = nd6_cache_alloc();
+    if (!cache) {
+        errorf("nd6_cache_alloc() failure");
+        return NULL;
+    }
+    cache->state = ND6_STATE_REACHABLE;
+    cache->ip6addr = ip6addr;
+    memcpy(cache->lladdr, lladdr, ETHER_ADDR_LEN);
+    gettimeofday(&cache->timestamp, NULL);
+    debugf("INSERT: ip6addr=%s, lladdr=%s", ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)), ether_addr_ntop(lladdr, addr2, sizeof(addr2)));
+    return cache;    
+}
+
+static void
+nd6_cache_delete(struct nd6_cache *cache)
+{
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
+
+    debugf("DELETE: ip6addr=%s, lladdr=%s", ip6_addr_ntop(cache->ip6addr, addr1, sizeof(addr1)), ether_addr_ntop(cache->lladdr, addr2, sizeof(addr2)));
+    cache->state =  ND6_STATE_NONE;
+    memset(cache->ip6addr.addr8, 0, IPV6_ADDR_LEN);
+    memset(cache->lladdr, 0, ETHER_ADDR_LEN);
+    timerclear(&cache->timestamp);
+}
+
+/**
+ * @return int -1: error, 0: incomplete, 1: found
+ */
+int
+nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
+{
+    struct nd6_cache *cache;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
+
+    if (iface->dev->type != NET_DEVICE_TYPE_ETHERNET) {
+        debugf("unsupported hardware address type");
+        return -1;
+    }
+    if (iface->family != NET_IFACE_FAMILY_IPV6) {
+        debugf("unsupported protocol address type");
+        return -1;
+    }
+    mutex_lock(&mutex);
+    cache = nd6_cache_select(ip6addr);
+    if (!cache) {
+        cache = nd6_cache_alloc();
+        if (!cache) {
+            mutex_unlock(&mutex);
+            errorf("nd6_cache_alloc() failure");
+            return -1;
+        }
+        cache->state = ND6_STATE_INCOMPLETE;
+        memcpy(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
+        gettimeofday(&cache->timestamp, NULL);
+        // send ns 
+        mutex_unlock(&mutex);
+        debugf("cache not found, ip6addr=%s", ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)));
+        return 0;        
+    }
+    if (cache->state == ND6_STATE_INCOMPLETE) {
+        // send ns
+        mutex_unlock(&mutex);
+        return 0;
+    }
+    memcpy(lladdr, cache->lladdr, ETHER_ADDR_LEN);
+    mutex_unlock(&mutex);
+    debugf("resolved, ip6addr=%s, lladdr=%s",
+        ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)), ether_addr_ntop(lladdr, addr2, sizeof(addr2)));
+    return 1;    
+}
+
 void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
 
     struct nd_neighbor_solicit *ns;
     struct nd_lladdr_opt *opt;
+    int merge = 0;
     char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
@@ -41,8 +203,21 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         ns->nd_ns_type, len, ether_addr_ntop(opt->lladdr, lladdr, sizeof(lladdr)));
     icmp6_dump((uint8_t *)ns, len);
 
-    uint32_t flags = 0;
-    nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->unicast, src, ns->target, iface->iface.dev->addr);
+    mutex_lock(&mutex);
+    if (nd6_cache_update(src, opt->lladdr)) {
+        /* update */
+        merge = 1;
+    }
+    mutex_unlock(&mutex);
+    if (memcmp(&iface->unicast, &ns->target, IPV6_ADDR_LEN) == 0) {
+        if (!merge) {
+            mutex_lock(&mutex);
+            nd6_cache_insert(src, opt->lladdr);
+            mutex_unlock(&mutex);
+        }
+        uint32_t flags = 0;
+        nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->unicast, src, ns->target, iface->iface.dev->addr);
+    } 
 }
 
 int
@@ -82,7 +257,6 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     pseudo.nxt = IP_PROTOCOL_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     na->nd_ns_sum = cksum16((uint16_t *)buf, msg_len, psum);
-    //na->nd_ns_sum = hton16(0x6c9e); // TODO: wrong chksum
 
     debugf("%s => %s, type=(%u), len=%zu, +msg_len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
