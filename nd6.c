@@ -37,41 +37,82 @@ struct nd6_cache {
 static mutex_t mutex = MUTEX_INITIALIZER;
 static struct nd6_cache caches[ND6_CACHE_SIZE];
 
+static int 
+jenkins_hash(uint8_t *key)
+{
+    int i;
+    uint32_t hash = 0;
+
+    hash = 0;
+    for (i = 0; i < IPV6_ADDR_LEN; i++){
+        hash += key[i];
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    hash += hash << 3;
+    hash ^= hash >> 11;
+    hash += hash << 15;
+    return hash % ND6_CACHE_SIZE;
+}
+
 /*
  * Neighbor Cache
  *
+ * NOTE: Neighbor Cache functions must be called after mutex locked
  */
 static struct nd6_cache *
-nd6_cache_alloc(void) 
+nd6_cache_alloc(int index) 
 {
     struct nd6_cache *entry, *oldest = NULL;
+    int offset = index;
 
-    /**
-     * ./util.h:#define countof(x) ((sizeof(x) / sizeof(*x)))
-     * ./util.h:#define tailof(x) (x + countof(x))
-     */
-    for (entry = caches; entry < tailof(caches); entry++) {
-        if (entry->state == ND6_STATE_NONE) {
-            return entry;
+    entry = &caches[index];
+    while (entry->state != ND6_STATE_NONE) {
+        ++offset;
+        if (offset > ND6_CACHE_SIZE || offset < 0) {
+            errorf("nd6 cache table range exceeded: %d", offset);
         }
         if (!oldest || timercmp(&oldest->timestamp, &entry->timestamp, >)) {
-            oldest = entry;
+            oldest = &caches[offset];
+        } 
+        if (offset == index) {
+            debugf("insert entry into caches[%d], hashindex=%d", offset, index);
+            return oldest;
         }
+        offset %= ND6_CACHE_SIZE;
+        entry = &caches[offset];
     }
-    return oldest;
+
+    debugf("insert entry into caches[%d], hashindex=%d", offset, index);
+    return entry;
 }
 
 static struct nd6_cache *
 nd6_cache_select(ip6_addr_t ip6addr)
 {
     struct nd6_cache *entry;
+    int hashindex, offset;
 
-    for (entry = caches; entry < tailof(caches); entry++) {
+    hashindex = jenkins_hash(ip6addr.addr8);
+    offset = hashindex;
+    entry = &caches[hashindex];
+    while (1) {
+        ++offset;
+        if (offset > ND6_CACHE_SIZE || offset < 0) {
+            errorf("nd6 cache table range exceeded: %d", offset);
+            break;
+        }
+        if (offset == hashindex) {
+            break;
+        }
         if (entry->state != ND6_STATE_NONE && memcmp(&entry->ip6addr, &ip6addr, IPV6_ADDR_LEN) == 0) {
             return entry;
         }
+        offset %= ND6_CACHE_SIZE;
+        entry = &caches[offset]; 
     }
-    return NULL; 
+
+    return NULL;
 }
 
 static struct nd6_cache *
@@ -99,8 +140,10 @@ nd6_cache_insert(ip6_addr_t ip6addr, const uint8_t *lladdr)
     struct nd6_cache *cache;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[ETHER_ADDR_STR_LEN];
+    int hashindex;
 
-    cache = nd6_cache_alloc();
+    hashindex = jenkins_hash(ip6addr.addr8);
+    cache = nd6_cache_alloc(hashindex);
     if (!cache) {
         errorf("nd6_cache_alloc() failure");
         return NULL;
@@ -135,6 +178,7 @@ nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
     struct nd6_cache *cache;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[ETHER_ADDR_STR_LEN];
+    int hashindex;
 
     if (iface->dev->type != NET_DEVICE_TYPE_ETHERNET) {
         debugf("unsupported hardware address type");
@@ -147,7 +191,8 @@ nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
     mutex_lock(&mutex);
     cache = nd6_cache_select(ip6addr);
     if (!cache) {
-        cache = nd6_cache_alloc();
+        hashindex = jenkins_hash(ip6addr.addr8);
+        cache = nd6_cache_alloc(hashindex);
         if (!cache) {
             mutex_unlock(&mutex);
             errorf("nd6_cache_alloc() failure");
