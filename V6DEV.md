@@ -1,17 +1,23 @@
 # メモ
 ## [IPv6](https://tex2e.github.io/rfc-translater/html/rfc8200.html)
-- Addresses
-    - スコープの概念: ICMPエラーメッセージでも使用
-        - ユニキャスト・エニーキャスト
-            
-            → リンクローカルスコープ・グローバルスコープ
-            
-            ULA は fc00::/7 でグローバルスコープに当たる
-            
-    - マルチキャスト
-    - エニーキャスト: 特別何か実装する必要があるのか？
-    - link-local address の自動生成
-    - 特殊アドレス
+- [Address](https://tex2e.github.io/rfc-translater/html/rfc4291.html)
+    - スコープの概念
+        - ユニキャスト / エニーキャスト
+            - リンクローカルスコープ or グローバルスコープ
+            - ULA(fc00::/7)はグローバルスコープに当たる
+    - ユニキャストアドレス
+        - subnet prefix (n bits) + interface ID (128-n bits)
+        - グローバル
+        - サイトローカル
+            - 非推奨
+        - リンクローカル
+            - 自動生成
+            - すべてのインターフェースには少なくとも1つのリンクローカルユニキャストアドレスが必要
+            - Modified EUI-64形式によるインターフェースIDの生成
+                - fe80::/64に追加
+                - [生成方法](https://tex2e.github.io/rfc-translater/html/rfc2464.html)
+    - 複数のサブネットプレフィックスを同じリンクに割り当てることができる
+    - アドレスの種類
         - Unspecified Address（::/128）
             - 割り当て不可・宛先にも不可
         - Loopback Address（::1/128）
@@ -20,84 +26,84 @@
             - Link Local All Nodes（ff02::1）
             - Link Local All Routers（ff02::2）
         - Link-local Unicast Address（fe80::/10）
-        - これら以外が Global Unicast Address
+        - 上記以外が Global Unicast Address
+    - IPv6ウニキャスト・マルチキャストアドレスをMACアドレスにマッピングする[方法](https://tex2e.github.io/rfc-translater/html/rfc2464.html)
 - Header
     - plen: 拡張ヘッダもペイロードとする
-    - hlimの確認: 0なら破棄
-    - 拡張ヘッダをしゃべれない場合は破棄してICMP code 1を送信
-- Extention Header (need supp)
+    - hlim: 0なら破棄
+    - 拡張ヘッダを認識できない場合は破棄してICMP code 1を送信
+- Extention Header (サポートが必要)
     - Hop-by-Hop
     - Fragment
     - Routing
     - IP Auth
-    - チェックサムは？
-- 上位層への影響
-    - MSSが小さくなることによるバッファサイズの変更
 - アドレス設定方法
     - SLAAC
     - DHCPv6
     - 手動
 
 ## [ICMPv6](https://tex2e.github.io/rfc-translater/html/rfc4443.html)
-- エラーメッセージには、0〜127のメッセージタイプがあります。
-    - 1: Destination Unreachable
+- エラーメッセージ(0〜127)
+    - Destination Unreachable (1)
         - code
-            - 0: No route to destination
-                - ルーティングテーブルに一致するエントリがない場合はcode 0を返す（デフォルトルートを持たない場合のみ発生）
-            - 1: Communication with destination administratively prohibited
-                - ファイアウォールでフィルタされた場合はcode 1を返す
-            - 2: Beyond scope of source address
-                - 「送信元アドレスのスコープ < 宛先アドレスのスコープ」の場合に発生
-                - 例）Src: link-local, Dst: global-scope
-            - 3: Address unreachable
-                - router or originating node
-            - 4: Port unreachable
+            - No route to destination (0)
+                - ルーティングテーブルに一致するエントリがない場合（デフォルトルートを持たない場合のみ発生）
+            - Communication with destination administratively prohibited (1)
+                - ファイアウォールでフィルタされた場合
+            - Beyond scope of source address (2)
+                - ```送信元アドレスのスコープ``` <  ```宛先アドレスのスコープ``` の場合
+                - Ex）Src: link-local, Dst: global-scope
+            - Address unreachable (3)
+            - Port unreachable (4)
                 - トランスポート層にリスナーがいない場合
-            - 5: Source address failed ingress/egress policy
-            - 6: Reject route to destination
-    - 2: Packet Too Big
+            - Source address failed ingress/egress policy (5)
+            - Reject route to destination (6)
+    - Packet Too Big (2)
         - code
-            - 0: Seto to zero
+            - Set to zero (0)
                 - next-hop リンクのMTUをセット
                 - PMTUの一部で利用
-    - 3: Time Exceeded
+    - Time Exceeded (3)
         - code
-            - 0: Hop limit exceeded in transit
+            - Hop limit exceeded in transit (0)
                 - ルータがhlim 0でパケットを受信した場合，または0に減らす場合にパケットを破棄して通知
-            - 1: Fragment reassembly time exceeded
-    - 4: Param Problem
+            - Fragment reassembly time exceeded (1)
+    - Param Problem (4)
         - code
-            - 0: 誤ったヘッダフィールドを発見
-            - 1: 知らないnext-headerに遭遇した
-            - 2: 知らないIPv6 optionを発見
+            - 誤ったヘッダフィールドを発見 (0)
+            - 知らないnext-headerに遭遇 (1)
+            - 知らないIPv6 optionを発見 (2)
         - Pointer Field: エラーが見つかったパケット内のオフセットを示す
-- 情報メッセージには、128〜255のメッセージタイプがあります。
-    - 128: Echo Req
+- 情報メッセージ(128〜255)
+    - Echo Request (128)
         - code
-            - 0: zero
+            - Set to zero (0)
                 - sequence number: zeroでも良い
                 - data: 任意のデータ
-    - 129: Echo Reply
+    - Echo Reply (129)
         - code
-            - 0: zero
+            - Set to zero (0)
                 - sequence number:
-                - data: echo reqのデータ←修正したらダメ！
+                - data: echo reqのデータをそのまま返す
             - IPv6マルチキャスト，Anycastアドレス宛でも返事する
-                - 返信のソースアドレスは、エコー要求メッセージが受信されたインターフェイスに属するユニキャストアドレスでなければなりません。
-- Path MTU Discovery:  https://tex2e.github.io/rfc-translater/html/rfc8201.html
-- ND6（Neighbor Discovery for IP version 6 (IPv6)）: https://tex2e.github.io/rfc-translater/html/rfc4861.html
-- MLD6
+                - 返信のソースアドレスは，エコー要求メッセージが受信されたインターフェイスに属するユニキャストアドレスでなければならない
+- [Path MTU Discovery](https://tex2e.github.io/rfc-translater/html/rfc8201.html)
+- [Neighbor Discovery](https://tex2e.github.io/rfc-translater/html/rfc4861.html)
+- [Multicast Listener Discovery](https://tex2e.github.io/rfc-translater/html/rfc2710.html)
+- [Multicast Listener Discovery version 2](https://tex2e.github.io/rfc-translater/html/rfc3810.html)
 
 ## [Socket APIのIPv6対応](https://tex2e.github.io/rfc-translater/html/rfc3542.html)
+調査中...
 
 ## Others
 - ネットワークデバイス
-    - Ethernet Multicast Address
-        - 「33:33:〜」が必須: Filterなのか？
-            - accept list 的な
+    - Multicast Ethernet Address
+        - 「33:33:〜」を受信可能に
+            - accept list 的なものを用意する
 - 論理インターフェース（IPv6）
     - scope
     - is router
     - is anycast
-    - multicast filter ← マルチキャスト受け取れるように
+    - マルチキャストを受信可能に
         - MACアドレスから生成するものもある
+- 上位層への影響
