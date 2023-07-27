@@ -9,6 +9,7 @@
 #include "net.h"
 #include "ether.h"
 #include "ip6.h"
+#include "icmp6.h"
 #include "nd6.h"
 
 struct ip6_protocol {
@@ -148,6 +149,41 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
     return p;
 }
 
+void 
+ip6_get_solicit_node_maddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_maddr)
+{
+    char addr[IPV6_ADDR_STR_LEN];
+
+    if (IS_IP6ADDR_MULTICAST(ip6addr)) {
+        errorf("%s is not unicast address", ip6_addr_ntop(ip6addr, addr, sizeof(addr)));
+        return;
+    }
+    // TODO: compute solicit node multicast addr from unicast addr
+    memcpy(solicit_node_maddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8);
+    solicit_node_maddr->addr8[13] = ip6addr.addr8[13];
+    solicit_node_maddr->addr8[14] = ip6addr.addr8[14];
+    solicit_node_maddr->addr8[15] = ip6addr.addr8[15];
+}
+
+void
+ip6_multicast_to_mac(const ip6_addr_t ip6maddr, uint8_t *hwaddr)
+{
+    char addr[IPV6_ADDR_STR_LEN];
+
+    if (!IS_IP6ADDR_MULTICAST(ip6maddr)) {
+        errorf("%s is not multicast address", ip6_addr_ntop(ip6maddr, addr, sizeof(addr)));
+        return;
+    }
+    // TODO: get mac multicast addr from multicast addr
+    hwaddr[0] = 0x33;
+    hwaddr[1] = 0x33;
+
+    hwaddr[2] = ip6maddr.addr8[12];
+    hwaddr[3] = ip6maddr.addr8[13];
+    hwaddr[4] = ip6maddr.addr8[14];
+    hwaddr[5] = ip6maddr.addr8[15];
+}
+
 void
 ip6_dump(const uint8_t *data, size_t len)
 {
@@ -278,7 +314,6 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
 }
 
-#include "icmp6.h"
 static int
 ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
 {
@@ -286,13 +321,15 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
     int ret;
 
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_RESOLVE) {
-        // ipv4 -> broadcast; ipv6 -> multicast; 
-        // TODO: ifaceに受信すべきマルチキャストを登録する
-        ret = nd6_resolve(NET_IFACE(iface), dst, hwaddr);
-        if (ret != 1) {
-            return ret;
+        if (IS_IP6ADDR_MULTICAST(dst)) {
+            ip6_multicast_to_mac(dst, hwaddr);
+        } else {
+            ret = nd6_resolve(iface, dst, hwaddr);
+            if (ret != 1) {
+                return ret;
+            }
         }
-    }   
+    }
 
     return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);    
 }
@@ -317,7 +354,7 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     hdr->ip6_hlim = 0xff;
     hdr->ip6_src = src; 
     hdr->ip6_dst = dst;
-    memcpy(hdr+1, data, len);  //TODO
+    memcpy(hdr+1, data, len);  
     debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
         NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), len, sizeof*hdr);
     ip6_dump(buf, sizeof(*hdr));

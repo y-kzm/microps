@@ -20,6 +20,8 @@
 #define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
     x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
 
+#define IS_IP6ADDR_MULTICAST(ip6addr) (ip6addr.addr8[0] == 0xff)
+
 typedef struct {
     union {
         uint8_t __addr8[16];
@@ -73,6 +75,9 @@ extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
+
+extern void 
+ip6_get_solicit_node_maddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_maddr);
 
 extern void
 ip6_dump(const uint8_t *data, size_t len);

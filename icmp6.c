@@ -132,6 +132,15 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         nd6_ns_input(data, len, src, dst, iface);
         break;
     case ICMPV6_TYPE_NEIGHBOR_ADV:
+        if (hdr->icmp6_code != 0) {
+            errorf("bad code");
+            return;   
+        }
+        if (len < sizeof(struct nd_neighbor_adv)) {
+            errorf("too short");
+            return;
+        }
+        nd6_na_input(data, len, src, dst, iface);
         break;
     case ICMPV6_TYPE_REDIRECT:
         break;

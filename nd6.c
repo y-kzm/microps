@@ -173,21 +173,22 @@ nd6_cache_delete(struct nd6_cache *cache)
  * @return int -1: error, 0: incomplete, 1: found
  */
 int
-nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
+nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
 {
     struct nd6_cache *cache;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[ETHER_ADDR_STR_LEN];
     int hashindex;
 
-    if (iface->dev->type != NET_DEVICE_TYPE_ETHERNET) {
+    if (iface->iface.dev->type != NET_DEVICE_TYPE_ETHERNET) {
         debugf("unsupported hardware address type");
         return -1;
     }
-    if (iface->family != NET_IFACE_FAMILY_IPV6) {
+    if (iface->iface.family != NET_IFACE_FAMILY_IPV6) {
         debugf("unsupported protocol address type");
         return -1;
     }
+    
     mutex_lock(&mutex);
     cache = nd6_cache_select(ip6addr);
     if (!cache) {
@@ -201,13 +202,13 @@ nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
         cache->state = ND6_STATE_INCOMPLETE;
         memcpy(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
         gettimeofday(&cache->timestamp, NULL);
-        // send ns 
+        nd6_ns_output(iface, ip6addr);
         mutex_unlock(&mutex);
         debugf("cache not found, ip6addr=%s", ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)));
         return 0;        
     }
     if (cache->state == ND6_STATE_INCOMPLETE) {
-        // send ns
+        nd6_ns_output(iface, ip6addr);
         mutex_unlock(&mutex);
         return 0;
     }
@@ -221,7 +222,6 @@ nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
 void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-
     struct nd_neighbor_solicit *ns;
     struct nd_lladdr_opt *opt;
     int merge = 0;
@@ -235,10 +235,11 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     }
     ns = (struct nd_neighbor_solicit *)data;
 
-    if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) != 0
-        && memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-        errorf("bad dstination addr");
-        return;
+    if (memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
+        if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) != 0) {
+            errorf("bad dstination addr");
+            return;
+        }
     }
     opt = (struct nd_lladdr_opt *)(data + sizeof(*ns));
 
@@ -260,8 +261,99 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
             nd6_cache_insert(src, opt->lladdr);
             mutex_unlock(&mutex);
         }
-        uint32_t flags = 0;
-        nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->unicast, src, ns->target, iface->iface.dev->addr);
+        if (ns->hdr.icmp6_type == ICMPV6_TYPE_NEIGHBOR_SOL) {
+            uint32_t flags = 0;
+            nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->unicast, src, ns->target, iface->iface.dev->addr);
+        }
+    } 
+}
+
+int
+nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
+{
+    uint8_t buf[ICMPV6_BUFSIZ];
+    struct nd_neighbor_solicit *ns;
+    struct nd_lladdr_opt *opt;
+    struct ip6_pseudo_hdr pseudo;
+    size_t msg_len;
+    uint16_t psum = 0;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+
+    /* neighbor solicit */
+    ns = (struct nd_neighbor_solicit *)buf;
+    ns->nd_ns_type = ICMPV6_TYPE_NEIGHBOR_SOL;
+    ns->nd_ns_code = 0;
+    ns->nd_ns_sum = 0;
+    ns->nd_ns_reserved = 0;
+    ns->target = target;
+
+    /* option */
+    opt = (struct nd_lladdr_opt *)(ns + 1);
+    opt->type = 1;
+    opt->len = 1;
+    memcpy(opt->lladdr, iface->iface.dev->addr, ETHER_ADDR_LEN);
+    msg_len = sizeof(*ns) + sizeof(*opt); 
+
+    /* pseudo header */
+    pseudo.src = iface->unicast;
+    ip6_get_solicit_node_maddr(target, &pseudo.dst);
+    pseudo.len = hton16(msg_len);
+    pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
+    pseudo.nxt = IP_PROTOCOL_ICMPV6;
+    psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
+    ns->nd_ns_sum = cksum16((uint16_t *)buf, msg_len, psum);
+
+    debugf("%s => %s, type=(%u), +msg_len=%zu",
+        ip6_addr_ntop(iface->unicast, addr1, sizeof(addr1)),
+        ip6_addr_ntop(pseudo.dst, addr2, sizeof(addr2)),
+        ns->nd_ns_type, msg_len);
+    icmp6_dump((uint8_t *)ns, msg_len);
+    return ip6_output(IP_PROTOCOL_ICMPV6, buf, msg_len, iface->unicast, pseudo.dst); 
+}
+
+void
+nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    struct nd_neighbor_solicit *na;
+    struct nd_lladdr_opt *opt;
+    int merge = 0;
+    char lladdr[ETHER_ADDR_STR_LEN];
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+
+    if (len < sizeof(*na)) {
+        errorf("too short");
+        return;             
+    }
+    na = (struct nd_neighbor_solicit *)data;
+
+    if (memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
+        if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) != 0) {
+            errorf("bad dstination addr");
+            return;
+        }
+    }
+    opt = (struct nd_lladdr_opt *)(data + sizeof(*na));
+
+    debugf("%s => %s, type=(%u), len=%zu target=%s",
+        ip6_addr_ntop(src, addr1, sizeof(addr1)),
+        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
+        na->nd_ns_type, len, ether_addr_ntop(opt->lladdr, lladdr, sizeof(lladdr)));
+    icmp6_dump((uint8_t *)na, len);
+
+    mutex_lock(&mutex);
+    if (nd6_cache_update(src, opt->lladdr)) {
+        /* update */
+        merge = 1;
+    }
+    mutex_unlock(&mutex);
+    if (memcmp(&iface->unicast, &na->target, IPV6_ADDR_LEN) == 0) {
+        if (!merge) {
+            mutex_lock(&mutex);
+            nd6_cache_insert(src, opt->lladdr);
+            mutex_unlock(&mutex);
+        }
     } 
 }
 

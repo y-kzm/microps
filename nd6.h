@@ -55,11 +55,15 @@ struct nd_lladdr_opt {
 
 
 extern int
-nd6_resolve(struct net_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr);
+nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr);
 
 extern void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
+extern int
+nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target);
 
+extern void
+nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
 extern int
 nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, const ip6_addr_t target, const void *lladdr);
 
