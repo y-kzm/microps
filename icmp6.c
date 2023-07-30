@@ -25,13 +25,9 @@ icmp6_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->icmp6_sum));
     switch (hdr->icmp6_type) {
     case ICMPV6_TYPE_DEST_UNREACH:
-        break;
     case ICMPV6_TYPE_TOO_BIG:
-        break;
     case ICMPV6_TYPE_TIME_EXCEEDED:
-        break;
     case ICMPV6_TYPE_PARAM_PROBLEM:
-        break;
     case ICMPV6_TYPE_ECHOREPLY:
         break;
     case ICMPV6_TYPE_ECHO:
@@ -39,7 +35,6 @@ icmp6_dump(const uint8_t *data, size_t len)
         fprintf(stderr, "         id: %u\n", ntoh16(echo->icmp6_id));
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
-        break;
     case ICMPV6_TYPE_ROUTER_ADV:
         break;
     case ICMPV6_TYPE_NEIGHBOR_SOL:
@@ -78,35 +73,37 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
     char addr3[IPV6_ADDR_STR_LEN];
+    struct ip6_pseudo_hdr pseudo;
+    uint16_t psum = 0;
 
     if (len < sizeof(*hdr)) {
         errorf("too short");
         return;        
     }
     hdr = (struct icmp6_hdr *)data;
-    // TODO: include ipv6 header
-    /*
-    if (cksum16((uint16_t *)data, len, 0) != 0) {
-        errorf("checksum error, sum=0x%04x, verify=0x%04x", ntoh16(hdr->icmp6_sum), ntoh16(cksum16((uint16_t *)data, len, -hdr->icmp6_sum)));
+
+    /* pseudo header for compute checksum */
+    pseudo.src = src;
+    pseudo.dst = dst;
+    pseudo.len = hton16(len);
+    pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
+    pseudo.nxt = IPV6_NEXT_ICMPV6;
+    psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
+    if (cksum16((uint16_t *)hdr, len, psum) != 0) {
+        errorf("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->icmp6_sum), ntoh16(cksum16((uint16_t *)hdr, len, -hdr->icmp6_sum + psum)));
         return;
     }
-    */
 
     debugf("%s => %s, type=(%u), len=%zu, iface=%s",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, len,
         ip6_addr_ntop(iface->unicast, addr3, sizeof(addr3)));
-    //icmp6_dump(data, len);
     switch (hdr->icmp6_type) {
     case ICMPV6_TYPE_DEST_UNREACH:
-        break;
     case ICMPV6_TYPE_TOO_BIG:
-        break;
     case ICMPV6_TYPE_TIME_EXCEEDED:
-        break;
     case ICMPV6_TYPE_PARAM_PROBLEM:
-        break;
     case ICMPV6_TYPE_ECHOREPLY:
         break;
     case ICMPV6_TYPE_ECHO:
@@ -117,7 +114,6 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         icmp6_output(ICMPV6_TYPE_ECHOREPLY, hdr->icmp6_code, hdr->icmp6_flag_reserved, (uint8_t *)(hdr + 1), len - sizeof(*hdr), dst, src);
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
-        break;
     case ICMPV6_TYPE_ROUTER_ADV:
         break;
     case ICMPV6_TYPE_NEIGHBOR_SOL:
@@ -175,7 +171,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
     pseudo.dst = dst;
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
-    pseudo.nxt = IP_PROTOCOL_ICMPV6;
+    pseudo.nxt = IPV6_NEXT_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->icmp6_sum = cksum16((uint16_t *)buf, msg_len, psum);
 
@@ -184,14 +180,13 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, msg_len);
     icmp6_dump((uint8_t *)hdr, msg_len);
-    return ip6_output(IP_PROTOCOL_ICMPV6, (uint8_t *)hdr, msg_len, src, dst);
+    return ip6_output(IPV6_NEXT_ICMPV6, (uint8_t *)hdr, msg_len, src, dst);
 }
-
 
 int
 icmp6_init(void)
 {
-    if (ip6_protocol_register("ICMPV6", IP_PROTOCOL_ICMPV6, icmp6_input) == -1) {
+    if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;
     }

@@ -22,11 +22,20 @@ struct ip6_protocol {
 static struct ip6_iface *ifaces;
 static struct ip6_protocol *protocols; 
 
-const ip6_addr_t IPV6_ADDR_ANY = 
+// Unspecified IPv6 address
+const ip6_addr_t IPV6_UNSPECIFIED_ADDR = 
     IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+// Loopback IPv6 address
+// Link-local All-Nodes IPv6 address
+// Link-local All-Routers IPv6 address
+// Link-local IPv6 address prefix
+// Solicited-node IPv6 address prefix
 const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
     IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xff, 0x00, 0x00, 0x00);
 
+/*
+ * REF: https://github.com/freebsd/freebsd-src/blob/main/sys/libkern/inet_pton.c
+ */
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
 {
@@ -110,6 +119,9 @@ ip6_addr_pton(const char *p, ip6_addr_t *n)
 	return 0;
 }
 
+/*
+ * REF: https://github.com/Oryx-Embedded/CycloneTCP/blob/master/ipv6/ipv6.c#L2364
+ */
 char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
 {
@@ -158,7 +170,6 @@ ip6_get_solicit_node_maddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_ma
         errorf("%s is not unicast address", ip6_addr_ntop(ip6addr, addr, sizeof(addr)));
         return;
     }
-    // TODO: compute solicit node multicast addr from unicast addr
     memcpy(solicit_node_maddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8);
     solicit_node_maddr->addr8[13] = ip6addr.addr8[13];
     solicit_node_maddr->addr8[14] = ip6addr.addr8[14];
@@ -174,7 +185,6 @@ ip6_multicast_to_mac(const ip6_addr_t ip6maddr, uint8_t *hwaddr)
         errorf("%s is not multicast address", ip6_addr_ntop(ip6maddr, addr, sizeof(addr)));
         return;
     }
-    // TODO: get mac multicast addr from multicast addr
     hwaddr[0] = 0x33;
     hwaddr[1] = 0x33;
 
@@ -337,8 +347,6 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
 static ssize_t
 ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
 {
-    // TODO: extension headers
-
     uint8_t buf[IPV6_TOTAL_SIZE_MAX];
     struct ip6_hdr *hdr;
     uint16_t plen;
@@ -368,7 +376,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     struct ip6_iface *iface;
     char addr[IPV6_ADDR_STR_LEN];
     
-    if (memcmp(&src, &IPV6_ADDR_ANY, IPV6_ADDR_LEN) == 0) {
+    if (memcmp(&src, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN) == 0) {
         errorf("ip routing does not implement");
         return -1;
     } else {
@@ -377,7 +385,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
             errorf("iface not found, src=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
             return -1;
         }
-        // TODO: Multicast, Check prefix
+        // TODO: Check scope
     }
     if (NET_IFACE(iface)->dev->mtu < IPV6_HDR_SIZE + len) {
         errorf("too long, dev=%s, mtu=%u < %zu",

@@ -30,7 +30,7 @@ main(int argc, char *argv[])
     int opt, noop = 0;
     struct net_device *dev;
     struct ip6_iface *iface;
-    ip6_addr_t src = IPV6_ADDR_ANY, dst;
+    ip6_addr_t src = IPV6_UNSPECIFIED_ADDR, dst;
     uint16_t id, seq = 0;
     size_t offset = IPV6_HDR_SIZE + ICMPV6_HDR_SIZE;
 
@@ -128,8 +128,9 @@ main(int argc, char *argv[])
     id = getpid() % UINT16_MAX;
     while (!terminate) {
         if (!noop) {
-            debugf("########## noop! ##########");
-            if (icmp6_output(ICMPV6_TYPE_ECHO, 0, hton32(id << 16 | ++seq), test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
+            debugf("########## Send Echo Request !!! ##########");
+            //if (icmp6_output(ICMPV6_TYPE_ECHO, 0, hton32(id << 16 | ++seq), test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
+            if (icmp6_output(ICMPV6_TYPE_ECHO, 0, hton32(id << 16 | ++seq), echo_data, sizeof(echo_data), src, dst) == -1) {
                 errorf("icmpv6_output() failure");
                 break;
             }

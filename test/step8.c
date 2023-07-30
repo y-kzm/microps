@@ -64,7 +64,7 @@ main(int argc, char *argv[])
     ip6_addr_pton(LOOPBACK_IPV6_ADDR, &dst);
     while (!terminate) {
         //if (ip6_output(IP_PROTOCOL_ICMPV6, test_data, sizeof(test_data), src, dst) == -1) {
-        if (ip6_output(IP_PROTOCOL_ICMPV6, test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
+        if (ip6_output(IPV6_NEXT_ICMPV6, test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
         //if (ip6_output(IP_PROTOCOL_ICMPV6, NULL, 40, src, dst) == -1) {
             errorf("failure");
             break;

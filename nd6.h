@@ -7,6 +7,10 @@
 #include "ip6.h"
 #include "icmp6.h"
 
+#define ND6_RESOLVE_ERROR      -1
+#define ND6_RESOLVE_INCOMPLETE  0
+#define ND6_RESOLVE_FOUND       1
+
 struct nd_neighbor_solicit {
     struct icmp6_hdr hdr;
     ip6_addr_t target;
@@ -44,15 +48,11 @@ struct nd_opt_hdr {
 #define ND_OPT_REDIRECTED_HEADER	4
 #define ND_OPT_MTU			        5
 
-// TODO: support other options
 struct nd_lladdr_opt {
     uint8_t type;
     uint8_t len;  
     uint8_t lladdr[ETHER_ADDR_LEN];
 };
-
-
-
 
 extern int
 nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr);

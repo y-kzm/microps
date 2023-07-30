@@ -7,7 +7,7 @@
 #define ICMPV6_HDR_SIZE 8
 #define ICMPV6_BUFSIZ IPV6_PAYLOAD_SIZE_MAX
 
-/* error message */
+/* error messages */
 #define ICMPV6_TYPE_DEST_UNREACH    1
 #define ICMPV6_TYPE_TOO_BIG         2 
 #define ICMPV6_TYPE_TIME_EXCEEDED   3
