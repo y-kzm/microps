@@ -476,3 +476,34 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     icmp6_dump((uint8_t *)na, msg_len);
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, src, dst);
 }
+
+static void 
+nd6_timer(void) 
+{
+    struct nd6_cache *entry;
+    struct timeval now, diff;
+
+    mutex_lock(&mutex);
+    gettimeofday(&now, NULL);
+    for (entry = caches; entry < tailof(caches); entry++) {
+        if (entry->state != ND6_STATE_NONE) {
+            timersub(&now, &entry->timestamp, &diff);
+            if (diff.tv_sec > ND6_CACHE_TIMEOUT) {
+                nd6_cache_delete(entry);
+            }
+        }
+    }
+    mutex_unlock(&mutex);
+}
+
+int 
+nd6_init(void)
+{
+    struct timeval interval = {1, 0};
+
+    if (net_timer_register("ND6 Timer", interval, nd6_timer) == -1) {
+        errorf("net_timer_register() failure");
+        return -1;
+    }
+    return 0;
+}

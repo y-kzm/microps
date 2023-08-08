@@ -70,4 +70,7 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
 extern int
 nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, const ip6_addr_t target, const void *lladdr);
 
+extern int 
+nd6_init(void);
+
 #endif
