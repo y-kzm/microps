@@ -162,36 +162,36 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
 }
 
 void 
-ip6_get_solicit_node_maddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_maddr)
+ip6_get_solicit_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_mcaddr)
 {
     char addr[IPV6_ADDR_STR_LEN];
 
-    if (IS_IP6ADDR_MULTICAST(ip6addr)) {
+    if (IPV6_ADDR_IS_MULTICAST(&ip6addr)) {
         errorf("%s is not unicast address", ip6_addr_ntop(ip6addr, addr, sizeof(addr)));
         return;
     }
-    memcpy(solicit_node_maddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8);
-    solicit_node_maddr->addr8[13] = ip6addr.addr8[13];
-    solicit_node_maddr->addr8[14] = ip6addr.addr8[14];
-    solicit_node_maddr->addr8[15] = ip6addr.addr8[15];
+    memcpy(solicit_node_mcaddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8);
+    solicit_node_mcaddr->addr8[13] = ip6addr.addr8[13];
+    solicit_node_mcaddr->addr8[14] = ip6addr.addr8[14];
+    solicit_node_mcaddr->addr8[15] = ip6addr.addr8[15];
 }
 
 void
-ip6_multicast_to_mac(const ip6_addr_t ip6maddr, uint8_t *hwaddr)
+ip6_multicast_to_mac(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
 {
     char addr[IPV6_ADDR_STR_LEN];
 
-    if (!IS_IP6ADDR_MULTICAST(ip6maddr)) {
-        errorf("%s is not multicast address", ip6_addr_ntop(ip6maddr, addr, sizeof(addr)));
+    if (!IPV6_ADDR_IS_MULTICAST(&ip6mcaddr)) {
+        errorf("%s is not multicast address", ip6_addr_ntop(ip6mcaddr, addr, sizeof(addr)));
         return;
     }
     hwaddr[0] = 0x33;
     hwaddr[1] = 0x33;
 
-    hwaddr[2] = ip6maddr.addr8[12];
-    hwaddr[3] = ip6maddr.addr8[13];
-    hwaddr[4] = ip6maddr.addr8[14];
-    hwaddr[5] = ip6maddr.addr8[15];
+    hwaddr[2] = ip6mcaddr.addr8[12];
+    hwaddr[3] = ip6mcaddr.addr8[13];
+    hwaddr[4] = ip6mcaddr.addr8[14];
+    hwaddr[5] = ip6mcaddr.addr8[15];
 }
 
 void
@@ -221,8 +221,9 @@ ip6_dump(const uint8_t *data, size_t len)
     funlockfile(stderr);
 }
 
+// TODO: multicast用ifaceの確保
 struct ip6_iface *
-ip6_iface_alloc(const char *unicast, const char *prefix)
+ip6_iface_alloc(const char *ip6addr, const char *prefix)
 {
     struct ip6_iface *iface;
 
@@ -232,12 +233,12 @@ ip6_iface_alloc(const char *unicast, const char *prefix)
         return NULL;   
     }
     NET_IFACE(iface)->family = NET_IFACE_FAMILY_IPV6;
-    if (ip6_addr_pton(unicast, &iface->unicast)) {
-        errorf("ip6_addr_pton() failure, addr=%s", unicast);
+    if (ip6_addr_pton(ip6addr, &iface->ip6_addr.addr)) {
+        errorf("ip6_addr_pton() failure, addr=%s", ip6addr);
         memory_free(iface);
         return NULL;
     }
-    if (ip6_addr_pton(prefix, &iface->prefix) == -1) {
+    if (ip6_addr_pton(prefix, &iface->ip6_addr.prefix) == -1) {
         errorf("ip6_addr_pton() failure, addr=%s", prefix);
         memory_free(iface);
         return NULL;
@@ -259,8 +260,8 @@ ip6_iface_register(struct net_device *dev, struct ip6_iface *iface)
     ifaces = iface;
     infof("registered: dev=%s, unicast=%s, prefix=%s",
         dev->name,
-        ip6_addr_ntop(iface->unicast, addr1, sizeof(addr1)),
-        ip6_addr_ntop(iface->prefix, addr2, sizeof(addr2)));
+        ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)),
+        ip6_addr_ntop(iface->ip6_addr.prefix, addr2, sizeof(addr2)));
     return 0;
 }
 
@@ -270,11 +271,17 @@ ip6_iface_select(ip6_addr_t addr)
     struct ip6_iface *entry;
 
     for (entry = ifaces; entry; entry = entry->next) {
-        if (memcmp(&entry->unicast, &addr, IPV6_ADDR_LEN) == 0) {
+        if (IPV6_ADDR_EQUAL(&entry->ip6_addr.addr, &addr)) {
             break;
         }
     }
     return entry;
+}
+
+static void
+ip6_input_hbh()
+{
+    debugf("*********** called ip6_input_hbh() ***********");
 }
 
 static void
@@ -283,45 +290,89 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     struct ip6_hdr *hdr;
     uint8_t v;
     struct ip6_iface *iface;
-    char addr[IPV6_ADDR_STR_LEN];
+    struct net_iface *entry;
     struct ip6_protocol *proto;
-    
+    char addr[IPV6_ADDR_STR_LEN];
+
     if (len < IPV6_HDR_SIZE) {
         errorf("too short");
         return;
     }
+    
     hdr = (struct ip6_hdr *)data;
     v = (hdr->ip6_vfc & 0xf0) >> 4; 
     if (v != IP_VERSION_IPV6) {
         errorf("ip version error: v=%u", v);
         return;
     }
-    if (ntoh16(hdr->ip6_plen) > (len - IPV6_HDR_SIZE)) {
-        errorf("too short payload length");
-        return;        
+
+    /* check against address spoofing/corruption */
+    if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_src) || 
+        IPV6_ADDR_IS_UNSPECIFIED(&hdr->ip6_dst)) {
+            errorf("bad addr");
+            return;
+    }
+    if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst) && 
+        (IPV6_ADDR_MC_SCOPE(&hdr->ip6_dst) == IPV6_ADDR_SCOPE_INTFACELOCAL)) {
+            errorf("bad addr");
+            return;
+    }
+    if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst) &&
+        (IPV6_ADDR_MC_SCOPE(&hdr->ip6_dst) == 0)) {
+            /* RFC4291 2.7 */
+            errorf("bad addr");
+            return;
     }
 
-    iface = (struct ip6_iface *)net_device_get_iface(dev, NET_IFACE_FAMILY_IPV6);
+    /* unicast check */
+    /* find an interface which has IPv6 address that matches the destination address  */
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+        if (entry->family == NET_IFACE_FAMILY_IPV6) {
+            iface = (struct ip6_iface *)entry;
+            if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &hdr->ip6_dst)) {
+                break;
+            }
+        }
+    }
     if (!iface) {
         /* iface is not registered to the device */
+        // goto forwarding?
         return;
-    }
-
-    if (memcmp(&hdr->ip6_dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-        if (hdr->ip6_dst.addr8[0] != 0xff) {
-            return;
-        }
-    }
+    }    
 
     debugf("dev=%s, iface=%s, next=%u, len=%u, frame=%u",
-        dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE + ETHER_HDR_SIZE);
+        dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE + ETHER_HDR_SIZE);
     ip6_dump(data, len);
-    for (proto = protocols; proto; proto = proto->next) {
-        if (proto->type == hdr->ip6_nxt) {
-            proto->handler((uint8_t *)hdr + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen), hdr->ip6_src, hdr->ip6_dst, iface);
-            return;
+    
+    if (hdr->ip6_nxt == IPV6_NEXT_HOP_BY_HOP) {
+        ip6_input_hbh();
+        return;
+    } else {   
+        for (proto = protocols; proto; proto = proto->next) {
+            if (proto->type == hdr->ip6_nxt) {
+                proto->handler((uint8_t *)hdr + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen), hdr->ip6_src, hdr->ip6_dst, iface);
+                return;
+            }
         }
     }
+}
+
+static void
+route6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("*********** called route6_input() ***********");
+}
+
+static void
+frag6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("*********** called frag6_input() ***********");
+}
+
+static void
+dest6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("*********** called dest6_input() ***********");
 }
 
 static int
@@ -331,7 +382,7 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
     int ret;
 
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_RESOLVE) {
-        if (IS_IP6ADDR_MULTICAST(dst)) {
+        if (IPV6_ADDR_IS_MULTICAST(&dst)) {
             ip6_multicast_to_mac(dst, hwaddr);
         } else {
             ret = nd6_resolve(iface, dst, hwaddr);
@@ -352,7 +403,6 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     uint16_t plen;
     char addr[IPV6_ADDR_STR_LEN];
 
-
     hdr = (struct ip6_hdr *)buf;
     hdr->ip6_flow = 0x0000;
     hdr->ip6_vfc = (IP_VERSION_IPV6 << 4);
@@ -364,7 +414,7 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     hdr->ip6_dst = dst;
     memcpy(hdr+1, data, len);  
     debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
-        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->unicast, addr, sizeof(addr)), len, sizeof*hdr);
+        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), len, sizeof*hdr);
     ip6_dump(buf, sizeof(*hdr));
 
     return ip6_output_device(iface, buf, len + sizeof(*hdr), dst);
@@ -376,7 +426,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     struct ip6_iface *iface;
     char addr[IPV6_ADDR_STR_LEN];
     
-    if (memcmp(&src, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN) == 0) {
+    if (IPV6_ADDR_EQUAL(&src, &IPV6_UNSPECIFIED_ADDR)) {
         errorf("ip routing does not implement");
         return -1;
     } else {
@@ -392,7 +442,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
             NET_IFACE(iface)->dev->name, NET_IFACE(iface)->dev->mtu, IPV6_HDR_SIZE + len);
         return -1;
     }    
-    if (ip6_output_core(iface, next, data, len, iface->unicast, dst) == -1) {
+    if (ip6_output_core(iface, next, data, len, iface->ip6_addr.addr, dst) == -1) {
         errorf("ip6_output_core() failure");
         return -1;
     }
@@ -432,5 +482,23 @@ ip6_init(void)
         errorf("net_protocol_register() failure");
         return -1;
     }
+
+    if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
+        errorf("ip6_protocol_register() failure");
+        return -1;
+    }
+    if (ip6_protocol_register("ROUING", IPV6_NEXT_ROUTING, route6_input) == -1) {
+        errorf("ip6_protocol_register() failure");
+        return -1;
+    }
+    if (ip6_protocol_register("FRAGMENT", IPV6_NEXT_FRAGMENT, frag6_input) == -1) {
+        errorf("ip6_protocol_register() failure");
+        return -1;
+    }
+    if (ip6_protocol_register("DESTOPT", IPV6_NEXT_DEST_OPT, dest6_input) == -1) {
+        errorf("ip6_protocol_register() failure");
+        return -1;
+    }
+
     return 0;  
 }

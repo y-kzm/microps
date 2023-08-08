@@ -36,10 +36,13 @@ struct nd_neighbor_adv {
 #define ND_NA_FLAG_OVERRIDE		0x20000000
 
 /* not used */
-struct nd_opt_hdr {
+struct nd_opt {
 	u_int8_t	nd_opt_type;
 	u_int8_t	nd_opt_len;
-	/* options follow. */
+    union {
+        uint8_t lladdr[ETHER_ADDR_LEN];
+    } nd_opt_un;
+#define nd_opt_lladdr nd_opt_un.lladdr
 };
 
 #define ND_OPT_SOURCE_LINKADDR		1

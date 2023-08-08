@@ -28,9 +28,11 @@ icmp6_dump(const uint8_t *data, size_t len)
     case ICMPV6_TYPE_TOO_BIG:
     case ICMPV6_TYPE_TIME_EXCEEDED:
     case ICMPV6_TYPE_PARAM_PROBLEM:
-    case ICMPV6_TYPE_ECHOREPLY:
+    case ICMPV6_TYPE_ECHO_REQUEST:
+        echo = (struct icmp6_echo *)hdr;
+        fprintf(stderr, "         id: %u\n", ntoh16(echo->icmp6_id));
         break;
-    case ICMPV6_TYPE_ECHO:
+    case ICMPV6_TYPE_ECHO_REPLY:
         echo = (struct icmp6_echo *)hdr;
         fprintf(stderr, "         id: %u\n", ntoh16(echo->icmp6_id));
         break;
@@ -70,19 +72,24 @@ void
 icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
     struct icmp6_hdr *hdr;
+    struct ip6_pseudo_hdr pseudo;
+    uint16_t psum = 0;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
     char addr3[IPV6_ADDR_STR_LEN];
-    struct ip6_pseudo_hdr pseudo;
-    uint16_t psum = 0;
 
     if (len < sizeof(*hdr)) {
         errorf("too short");
         return;        
     }
+
+    if (IPV6_ADDR_IS_MULTICAST(&dst)) {
+        //lookup
+    }
+
     hdr = (struct icmp6_hdr *)data;
 
-    /* pseudo header for compute checksum */
+    /* calculate the checksum */
     pseudo.src = src;
     pseudo.dst = dst;
     pseudo.len = hton16(len);
@@ -98,27 +105,37 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, len,
-        ip6_addr_ntop(iface->unicast, addr3, sizeof(addr3)));
+        ip6_addr_ntop(iface->ip6_addr.addr, addr3, sizeof(addr3)));
+    icmp6_dump(data, len);
+        
     switch (hdr->icmp6_type) {
     case ICMPV6_TYPE_DEST_UNREACH:
     case ICMPV6_TYPE_TOO_BIG:
     case ICMPV6_TYPE_TIME_EXCEEDED:
     case ICMPV6_TYPE_PARAM_PROBLEM:
-    case ICMPV6_TYPE_ECHOREPLY:
-        break;
-    case ICMPV6_TYPE_ECHO:
-        icmp6_dump(data, len);
-        if (memcmp(&dst, &iface->unicast, IPV6_ADDR_LEN) != 0) {
-            dst = iface->unicast;
+    case ICMPV6_TYPE_ECHO_REQUEST:
+        if (hdr->icmp6_code != 0) {
+            errorf("bad icmpv6 code");
+            break;
         }
-        icmp6_output(ICMPV6_TYPE_ECHOREPLY, hdr->icmp6_code, hdr->icmp6_flag_reserved, (uint8_t *)(hdr + 1), len - sizeof(*hdr), dst, src);
+        if (!IPV6_ADDR_EQUAL(&dst, &iface->ip6_addr.addr)) {
+            dst = iface->ip6_addr.addr;
+        }
+        icmp6_output(ICMPV6_TYPE_ECHO_REPLY, hdr->icmp6_code, hdr->icmp6_flag_reserved, (uint8_t *)(hdr + 1), len - sizeof(*hdr), dst, src);
+        break;    
+    case ICMPV6_TYPE_ECHO_REPLY:
+        if (hdr->icmp6_code != 0) {
+            errorf("bad icmpv6 code");
+            break;
+        }
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
     case ICMPV6_TYPE_ROUTER_ADV:
+        debugf("************* not supported! *************");
         break;
     case ICMPV6_TYPE_NEIGHBOR_SOL:
         if (hdr->icmp6_code != 0) {
-            errorf("bad code");
+            errorf("bad icmpv6 code");
             return;   
         }
         if (len < sizeof(struct nd_neighbor_solicit)) {
@@ -129,7 +146,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         break;
     case ICMPV6_TYPE_NEIGHBOR_ADV:
         if (hdr->icmp6_code != 0) {
-            errorf("bad code");
+            errorf("bad icmpv6 code");
             return;   
         }
         if (len < sizeof(struct nd_neighbor_adv)) {
@@ -181,14 +198,4 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
         hdr->icmp6_type, msg_len);
     icmp6_dump((uint8_t *)hdr, msg_len);
     return ip6_output(IPV6_NEXT_ICMPV6, (uint8_t *)hdr, msg_len, src, dst);
-}
-
-int
-icmp6_init(void)
-{
-    if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
-        errorf("ip6_protocol_register() failure");
-        return -1;
-    }
-    return 0;
 }

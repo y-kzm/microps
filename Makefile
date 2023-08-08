@@ -8,7 +8,6 @@ TESTS = test/test.exe \
         test/step6.exe \
         test/step7.exe \
         test/step8.exe \
-        test/step9.exe \
         test/step10.exe \
 
 DRIVERS = driver/null.o \

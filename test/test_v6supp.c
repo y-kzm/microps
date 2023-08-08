@@ -130,7 +130,7 @@ main(int argc, char *argv[])
         if (!noop) {
             debugf("########## Send Echo Request !!! ##########");
             //if (icmp6_output(ICMPV6_TYPE_ECHO, 0, hton32(id << 16 | ++seq), test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
-            if (icmp6_output(ICMPV6_TYPE_ECHO, 0, hton32(id << 16 | ++seq), echo_data, sizeof(echo_data), src, dst) == -1) {
+            if (icmp6_output(ICMPV6_TYPE_ECHO_REQUEST, 0, hton32(id << 16 | ++seq), echo_data, sizeof(echo_data), src, dst) == -1) {
                 errorf("icmpv6_output() failure");
                 break;
             }

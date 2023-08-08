@@ -14,8 +14,8 @@
 #define ICMPV6_TYPE_PARAM_PROBLEM   4
 
 /* informational messages */
-#define ICMPV6_TYPE_ECHO            128
-#define ICMPV6_TYPE_ECHOREPLY       129
+#define ICMPV6_TYPE_ECHO_REQUEST    128
+#define ICMPV6_TYPE_ECHO_REPLY      129
 #define ICMPV6_TYPE_ROUTER_SOL      133
 #define ICMPV6_TYPE_ROUTER_ADV      134
 #define ICMPV6_TYPE_NEIGHBOR_SOL    135
@@ -45,8 +45,5 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
 
 extern int 
 icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, size_t len, ip6_addr_t src, ip6_addr_t dst);
-
-extern int
-icmp6_init(void);
 
 #endif
