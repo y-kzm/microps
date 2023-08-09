@@ -1,6 +1,7 @@
 #ifndef IP6_H
 #define IP6_H
 
+#include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -23,6 +24,12 @@
 
 /* address checking macros */
 #define IPV6_ADDR_EQUAL(addr1, addr2) (memcmp((addr1)->addr8, (addr2)->addr8, IPV6_ADDR_LEN) == 0)
+#define IPV6_ADDR_MASK(addr1, addr, masked)  {                          \
+        (masked)->addr32[0] = (addr1)->addr32[0] &= (addr2)->addr32[0]; \
+        (masked)->addr32[1] = (addr1)->addr32[1] &= (addr2)->addr32[1]; \
+        (masked)->addr32[2] = (addr1)->addr32[2] &= (addr2)->addr32[2]; \
+        (masked)->addr32[3] = (addr1)->addr32[3] &= (addr2)->addr32[3]; \
+    }
 #define IPV6_ADDR_IS_MULTICAST(ip6addr) ((ip6addr)->addr8[0] == 0xff)
 #define IPV6_ADDR_IS_UNSPECIFIED(ip6addr) (memcmp((ip6addr)->addr8, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN) == 0)
 
@@ -123,11 +130,19 @@ ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
 
+extern ip6_addr_t *
+ip6_addr_mask(const ip6_addr_t *addr1, const ip6_addr_t *addr2, ip6_addr_t *masked);
+
 extern void 
 ip6_get_solicit_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_mcaddr);
 
 extern void
 ip6_dump(const uint8_t *data, size_t len);
+
+extern int
+ip6_route_set_default_gateway(struct ip6_iface *iface, const char *gateway);
+extern struct ip6_iface *
+ip6_route_get_iface(ip6_addr_t dst);
 
 extern struct ip6_iface *
 ip6_iface_alloc(const char *ip6addr, const char *prefix);

@@ -19,6 +19,7 @@
 #define ETHER_TAP_IPV6_NETMASK "ffff:ffff:ffff:ffff::"
 
 #define DEFAULT_GATEWAY "192.0.2.1"
+#define DEFAULT_GATEWAY6 "fd00:cafe::1"
 
 /*
 const uint8_t test_data[] = {

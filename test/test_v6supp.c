@@ -112,12 +112,10 @@ main(int argc, char *argv[])
         errorf("ip6_iface_register() failure");
         return -1;
     }
-    /*
-    if (ip_route_set_default_gateway(iface, DEFAULT_GATEWAY) == -1) {
-        errorf("ip_route_set_default_gateway() failure");
+    if (ip6_route_set_default_gateway(iface, DEFAULT_GATEWAY6) == -1) {
+        errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
-    */
     if (net_run() == -1) {
         errorf("net_run() failure");
         return -1;
