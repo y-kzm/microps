@@ -11,7 +11,7 @@
 
 #include "driver/null.h"
 #include "driver/loopback.h"
-#include "driver/ether_tap.h"
+#include "driver/ether_pcap.h"
 
 #include "test.h"
 
@@ -32,7 +32,7 @@ main(int argc, char *argv[])
     struct ip6_iface *iface;
     ip6_addr_t src = IPV6_UNSPECIFIED_ADDR, dst;
     uint16_t id, seq = 0;
-    size_t offset = IPV6_HDR_SIZE + ICMPV6_HDR_SIZE;
+    //size_t offset = IPV6_HDR_SIZE + ICMPV6_HDR_SIZE;
 
     /*
      * Parse command line parameters
@@ -98,12 +98,12 @@ main(int argc, char *argv[])
         errorf("ip6_iface_register() failure");
         return -1;
     }
-    dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
+    dev = ether_pcap_init(ETHER_PCAP_NAME, ETHER_PCAP_HW_ADDR);
     if (!dev) {
-        errorf("ether_tap_init() failure");
+        errorf("ether_pcap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_NETMASK);
+    iface = ip6_iface_alloc(ETHER_PCAP_IPV6_ADDR, ETHER_PCAP_IPV6_NETMASK);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -112,7 +112,7 @@ main(int argc, char *argv[])
         errorf("ip6_iface_register() failure");
         return -1;
     }
-    if (ip6_route_set_default_gateway(iface, DEFAULT_GATEWAY6) == -1) {
+    if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
@@ -127,7 +127,6 @@ main(int argc, char *argv[])
     while (!terminate) {
         if (!noop) {
             debugf("########## Send Echo Request !!! ##########");
-            //if (icmp6_output(ICMPV6_TYPE_ECHO, 0, hton32(id << 16 | ++seq), test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
             if (icmp6_output(ICMPV6_TYPE_ECHO_REQUEST, 0, hton32(id << 16 | ++seq), echo_data, sizeof(echo_data), src, dst) == -1) {
                 errorf("icmpv6_output() failure");
                 break;

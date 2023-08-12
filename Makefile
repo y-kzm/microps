@@ -4,11 +4,8 @@ APPS = app/udpc.exe \
        app/tcps.exe \
 
 TESTS = test/test.exe \
-        test/test_v6supp.exe \
-        test/step6.exe \
-        test/step7.exe \
-        test/step8.exe \
-        test/step10.exe \
+        test/v6test_tap.exe \
+        test/v6test_pcap.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -58,3 +55,13 @@ $(TESTS): %.exe : %.o $(OBJS) $(DRIVERS) test/test.h
 
 clean:
 	rm -rf $(APPS) $(APPS:.exe=.o) $(OBJS) $(DRIVERS) $(TESTS) $(TESTS:.exe=.o)
+
+tap:
+	sudo ./script/tap.sh
+
+setup:
+	sudo ./script/setup.sh
+
+cleanup:
+	sudo ip --all netns delete
+
