@@ -6,6 +6,7 @@ APPS = app/udpc.exe \
 TESTS = test/test.exe \
         test/v6test_tap.exe \
         test/v6test_pcap.exe \
+        test/v6test_udp.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -22,6 +23,7 @@ OBJS = util.o \
        ip6.o \
        icmp6.o \
        nd6.o \
+       udp6.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -iquote .
 

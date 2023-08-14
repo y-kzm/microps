@@ -171,6 +171,42 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
     return p;
 }
 
+int
+ip6_endpoint_pton(const char *p, struct ip6_endpoint *n)
+{
+    char *sep1, *sep2;
+    char addr[IPV6_ADDR_STR_LEN] = {};
+    long int port;
+
+    sep1 = strchr(p, '[');
+    if (!sep1 || sep1 - p != 0) {
+        return -1;
+    }
+    sep2 = strchr(p, ']');
+    if (!sep2) {
+        return -1;
+    }
+    memcpy(addr, p + 1, sep2 - sep1);
+    if (ip6_addr_pton(addr, &n->addr) == -1) {
+        return -1;
+    }
+    port = strtol(sep2+1, NULL, 10);
+    if (port <= 0 || port > UINT16_MAX) {
+        return -1;
+    }
+    n->port = hton16(port);
+    return 0;
+}
+
+char *
+ip6_endpoint_ntop(const struct ip6_endpoint *n, char *p, size_t size)
+{
+    char addr[IPV6_ADDR_STR_LEN];
+
+    snprintf(p, IPV6_ENDPOINT_STR_LEN, "[%s]%d", ip6_addr_ntop(n->addr, addr, size), ntoh16(n->port));
+    return p;
+}
+
 // TODO: macro
 ip6_addr_t *
 ip6_addr_mask(const ip6_addr_t *addr1, const ip6_addr_t *addr2, ip6_addr_t *masked)

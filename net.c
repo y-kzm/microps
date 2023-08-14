@@ -388,7 +388,7 @@ net_init(void)
         return -1;
     }
     if (nd6_init() == -1) {
-        errorf("ip6_init() failure");
+        errorf("nd6_init() failure");
         return -1;
     }    
     if (icmp_init() == -1) {
@@ -397,6 +397,10 @@ net_init(void)
     }
     if (udp_init() == -1) {
         errorf("udp_init() failure");
+        return -1;
+    }
+    if (udp6_init() == -1) {
+        errorf("udp6_init() failure");
         return -1;
     }
     if (tcp_init() == -1) {

@@ -169,11 +169,10 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
 {
     uint8_t buf[ICMPV6_BUFSIZ];
     struct icmp6_hdr *hdr;
-    size_t msg_len;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];  
     struct ip6_pseudo_hdr pseudo;
-    uint16_t psum = 0;
+    uint16_t total, psum = 0;
 
     hdr = (struct icmp6_hdr *)buf;
     hdr->icmp6_type = type;
@@ -181,21 +180,21 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
     hdr->icmp6_sum = 0;
     hdr->icmp6_flag_reserved = flags;
     memcpy(hdr + 1, data, len);
-    msg_len = sizeof(*hdr) + len;
+    total = sizeof(*hdr) + len;
 
    /* pseudo header */
     pseudo.src = src;
     pseudo.dst = dst;
-    pseudo.len = hton16(msg_len);
+    pseudo.len = hton16(total);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = IPV6_NEXT_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
-    hdr->icmp6_sum = cksum16((uint16_t *)buf, msg_len, psum);
+    hdr->icmp6_sum = cksum16((uint16_t *)buf, total, psum);
 
     debugf("%s => %s, type=(%u), len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        hdr->icmp6_type, msg_len);
-    icmp6_dump((uint8_t *)hdr, msg_len);
-    return ip6_output(IPV6_NEXT_ICMPV6, (uint8_t *)hdr, msg_len, src, dst);
+        hdr->icmp6_type, total);
+    icmp6_dump((uint8_t *)hdr, total);
+    return ip6_output(IPV6_NEXT_ICMPV6, (uint8_t *)hdr, total, src, dst);
 }

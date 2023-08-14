@@ -12,29 +12,12 @@
 #include "ip.h"
 #include "udp.h"
 
-#define UDP_PCB_SIZE 16
-
-#define UDP_PCB_STATE_FREE    0
-#define UDP_PCB_STATE_OPEN    1
-#define UDP_PCB_STATE_CLOSING 2
-
-/* see https://tools.ietf.org/html/rfc6335 */
-#define UDP_SOURCE_PORT_MIN 49152
-#define UDP_SOURCE_PORT_MAX 65535
-
 struct pseudo_hdr {
     uint32_t src;
     uint32_t dst;
     uint8_t zero;
     uint8_t protocol;
     uint16_t len;
-};
-
-struct udp_hdr {
-    uint16_t src;
-    uint16_t dst;
-    uint16_t len;
-    uint16_t sum;
 };
 
 struct udp_pcb {
@@ -53,7 +36,7 @@ struct udp_queue_entry {
 static mutex_t mutex = MUTEX_INITIALIZER;
 static struct udp_pcb pcbs[UDP_PCB_SIZE];
 
-static void
+void
 udp_dump(const uint8_t *data, size_t len)
 {
     struct udp_hdr *hdr;

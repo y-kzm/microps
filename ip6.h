@@ -125,10 +125,21 @@ extern const ip6_addr_t IPV6_UNSPECIFIED_ADDR;
 extern const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX;
 #define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
 
+#define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 7)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy\0 */
+
+struct ip6_endpoint {
+    ip6_addr_t addr;
+    uint16_t port;
+};
+
 extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
+extern int
+ip6_endpoint_pton(const char *p, struct ip6_endpoint *n);
+extern char *
+ip6_endpoint_ntop(const struct ip6_endpoint *n, char *p, size_t size);
 
 extern ip6_addr_t *
 ip6_addr_mask(const ip6_addr_t *addr1, const ip6_addr_t *addr2, ip6_addr_t *masked);
