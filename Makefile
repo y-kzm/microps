@@ -6,7 +6,8 @@ APPS = app/udpc.exe \
 TESTS = test/test.exe \
         test/v6test_tap.exe \
         test/v6test_pcap.exe \
-        test/v6test_udp.exe \
+        test/v6test_udp_srv.exe \
+        test/v6test_udp_cli.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \

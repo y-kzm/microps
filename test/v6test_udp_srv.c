@@ -84,22 +84,43 @@ cleanup(void)
 int
 main(int argc, char *argv[])
 {
-    struct ip6_endpoint src, dst;
-    size_t offset = IPV6_HDR_SIZE + sizeof(struct icmp6_hdr);
+    int soc;
+    struct ip6_endpoint local, foreign;
+    uint8_t buf[1024];
+    ssize_t ret;
+    char ep[IPV6_ENDPOINT_STR_LEN];
 
     if (setup() == -1) {
         errorf("setup() failure");
         return -1;
     }
-    ip6_endpoint_pton("[::1]10000", &src);
-    ip6_endpoint_pton("[::1]7", &dst);
+    soc = udp6_open();
+    if (soc == -1) {
+        errorf("udp_open() failure");
+        return -1;
+    }
+    ip6_endpoint_pton("[::]7", &local);
+    if (udp6_bind(soc, &local) == -1) {
+        errorf("udp_bind() failure");
+        udp6_close(soc);
+        return -1;
+    }
+    debugf("waiting for data...");
     while (!terminate) {
-        if (udp6_output(&src, &dst, test_data + offset, sizeof(test_data) - offset) == -1) {
-            errorf("udp_output() failure");
+        ret = udp6_recvfrom(soc, buf, sizeof(buf), &foreign);
+        if (ret == -1) {
+            errorf("udp_recvfrom() failure");
             break;
         }
-        sleep(1);
+        debugf("%zd bytes data form %s", ret, ip6_endpoint_ntop(&foreign, ep, sizeof(ep)));
+        hexdump(stderr, buf, ret);
+        if (udp6_sendto(soc, buf, ret, &foreign) == -1) {
+            errorf("udp_sendto() failure");
+            break;
+        }
     }
+    udp6_close(soc);
     cleanup();
     return 0;
+
 }
