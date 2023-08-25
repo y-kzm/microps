@@ -8,6 +8,7 @@ TESTS = test/test.exe \
         test/v6test_pcap.exe \
         test/v6test_udp_srv.exe \
         test/v6test_udp_cli.exe \
+        test/v6test_slaac.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -25,6 +26,7 @@ OBJS = util.o \
        icmp6.o \
        nd6.o \
        udp6.o \
+       slaac.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -iquote .
 

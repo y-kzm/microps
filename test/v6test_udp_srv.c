@@ -41,7 +41,7 @@ setup(void)
         errorf("loopback_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_NETMASK);
+    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -55,7 +55,7 @@ setup(void)
         errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_NETMASK);
+    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -96,12 +96,12 @@ main(int argc, char *argv[])
     }
     soc = udp6_open();
     if (soc == -1) {
-        errorf("udp_open() failure");
+        errorf("udp6_open() failure");
         return -1;
     }
     ip6_endpoint_pton("[::]7", &local);
     if (udp6_bind(soc, &local) == -1) {
-        errorf("udp_bind() failure");
+        errorf("udp6_bind() failure");
         udp6_close(soc);
         return -1;
     }
@@ -109,13 +109,13 @@ main(int argc, char *argv[])
     while (!terminate) {
         ret = udp6_recvfrom(soc, buf, sizeof(buf), &foreign);
         if (ret == -1) {
-            errorf("udp_recvfrom() failure");
+            errorf("udp6_recvfrom() failure");
             break;
         }
         debugf("%zd bytes data form %s", ret, ip6_endpoint_ntop(&foreign, ep, sizeof(ep)));
         hexdump(stderr, buf, ret);
         if (udp6_sendto(soc, buf, ret, &foreign) == -1) {
-            errorf("udp_sendto() failure");
+            errorf("udp6_sendto() failure");
             break;
         }
     }

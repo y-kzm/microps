@@ -131,6 +131,8 @@ udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
         errorf("length error: len=%zu, hdr->len=%u", len, ntoh16(hdr->len));
         return;
     }
+
+    /* verify checksum value */
     pseudo.src = src;
     pseudo.dst = dst;
     pseudo.len = hton16(len);
@@ -194,6 +196,8 @@ udp6_output(struct ip6_endpoint *src, struct ip6_endpoint *dst, const  uint8_t *
     hdr->len = hton16(total);
     hdr->sum = 0;
     memcpy(hdr + 1, data, len);
+
+    /* calculate checksum value */
     pseudo.src = src->addr;
     pseudo.dst = dst->addr;
     pseudo.len = hton16(total);

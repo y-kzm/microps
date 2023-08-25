@@ -60,7 +60,7 @@ jenkins_hash(uint8_t *key)
  *
  * NOTE: Neighbor Cache functions must be called after mutex locked
  */
-#ifdef CACHEDUMP
+#ifdef CACHEDUMP_ENABLE
 static char *
 nd6_state_ntoa(uint8_t state) {
     switch (state) {
@@ -368,9 +368,9 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     memcpy(opt->lladdr, NET_IFACE(iface)->dev->addr, ETHER_ADDR_LEN);
     msg_len = sizeof(*ns) + sizeof(*opt); 
 
-    /* pseudo header */
+    /* calculate the checksum */
     pseudo.src = iface->ip6_addr.addr;
-    ip6_get_solicit_node_mcaddr(target, &pseudo.dst);
+    ip6_solicited_node_mcaddr(target, &pseudo.dst);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = IPV6_NEXT_ICMPV6;
@@ -460,7 +460,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     msg_len = sizeof(*na) + sizeof(*opt) + len; 
     memcpy(buf + msg_len, data, len);
 
-    /* pseudo header */
+    /* calculate the checksum */
     pseudo.src = src;
     pseudo.dst = dst;
     pseudo.len = hton16(msg_len);

@@ -84,12 +84,12 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     }
 
     if (IPV6_ADDR_IS_MULTICAST(&dst)) {
-        //lookup
+        // TODO: マルチキャストフィルタのルックアップ
     }
 
     hdr = (struct icmp6_hdr *)data;
 
-    /* calculate the checksum */
+    /* verify checksum value */
     pseudo.src = src;
     pseudo.dst = dst;
     pseudo.len = hton16(len);
@@ -182,7 +182,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, siz
     memcpy(hdr + 1, data, len);
     total = sizeof(*hdr) + len;
 
-   /* pseudo header */
+    /* calculate checksum value */
     pseudo.src = src;
     pseudo.dst = dst;
     pseudo.len = hton16(total);

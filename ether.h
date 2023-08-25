@@ -9,7 +9,9 @@
 #include "net.h"
 
 #define ETHER_ADDR_LEN 6
+#define ETHER_EUI64_ID_LEN 8
 #define ETHER_ADDR_STR_LEN 18 /* "xx:xx:xx:xx:xx:xx\0" */
+
 
 #define ETHER_HDR_SIZE 14
 #define ETHER_FRAME_SIZE_MIN   60 /* without FCS */
@@ -29,6 +31,9 @@ extern int
 ether_addr_pton(const char *p, uint8_t *n);
 extern char *
 ether_addr_ntop(const uint8_t *n, char *p, size_t size);
+
+extern void
+ether_addr_eui64(const uint8_t *hwaddr, uint8_t *eui64);
 
 extern int
 ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *payload, size_t plen, const void *dst, ssize_t (*callback)(struct net_device *dev, const uint8_t *buf, size_t len));

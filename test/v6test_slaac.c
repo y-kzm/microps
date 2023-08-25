@@ -8,10 +8,11 @@
 #include "net.h"
 #include "ip6.h"
 #include "icmp6.h"
+#include "slaac.h"
 
 #include "driver/null.h"
 #include "driver/loopback.h"
-#include "driver/ether_pcap.h"
+#include "driver/ether_tap.h"
 
 #include "test.h"
 
@@ -79,6 +80,7 @@ main(int argc, char *argv[])
         errorf("net_init() failure");
         return -1;
     }
+#ifdef COMMENTOUT
     dev = null_init();
     if (!dev) {
         errorf("null_init() failure");
@@ -98,12 +100,14 @@ main(int argc, char *argv[])
         errorf("ip6_iface_register() failure");
         return -1;
     }
-    dev = ether_pcap_init(ETHER_PCAP_NAME, ETHER_PCAP_HW_ADDR);
+#endif
+    dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
     if (!dev) {
-        errorf("ether_pcap_init() failure");
+        errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_PCAP_IPV6_ADDR, ETHER_PCAP_IPV6_PREFIXLEN, 0);
+#ifdef COMMENTOUT
+    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -112,10 +116,23 @@ main(int argc, char *argv[])
         errorf("ip6_iface_register() failure");
         return -1;
     }
+#endif
+    iface = slaac_iface_alloc(dev);
+    if (!iface) {
+        errorf("slaac_iface_alloc() failure");
+        return -1;
+    }
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
+        return -1;
+    }
+
+#ifdef COMMENTOUT
     if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
+#endif
     if (net_run() == -1) {
         errorf("net_run() failure");
         return -1;

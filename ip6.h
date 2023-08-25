@@ -22,16 +22,19 @@
 #define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
     x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
 
-/* address checking macros */
+/* macros for address checking */
 #define IPV6_ADDR_EQUAL(addr1, addr2) (memcmp((addr1)->addr8, (addr2)->addr8, IPV6_ADDR_LEN) == 0)
-#define IPV6_ADDR_MASK(addr1, addr, masked)  {                          \
-        (masked)->addr32[0] = (addr1)->addr32[0] &= (addr2)->addr32[0]; \
-        (masked)->addr32[1] = (addr1)->addr32[1] &= (addr2)->addr32[1]; \
-        (masked)->addr32[2] = (addr1)->addr32[2] &= (addr2)->addr32[2]; \
-        (masked)->addr32[3] = (addr1)->addr32[3] &= (addr2)->addr32[3]; \
+#define IPV6_ADDR_MASK(addr1, addr2, masked)  {                          \
+        (masked)->addr32[0] = (addr1)->addr32[0] & (addr2)->addr32[0]; \
+        (masked)->addr32[1] = (addr1)->addr32[1] & (addr2)->addr32[1]; \
+        (masked)->addr32[2] = (addr1)->addr32[2] & (addr2)->addr32[2]; \
+        (masked)->addr32[3] = (addr1)->addr32[3] & (addr2)->addr32[3]; \
     }
 #define IPV6_ADDR_IS_MULTICAST(ip6addr) ((ip6addr)->addr8[0] == 0xff)
 #define IPV6_ADDR_IS_UNSPECIFIED(ip6addr) (memcmp((ip6addr)->addr8, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN) == 0)
+#define IPV6_ADDR_IS_LOOPBACK(ip6addr) IPV6_ADDR_EQUAL(ip6addr, &IPV6_LOOPBACK_ADDR)
+#define IPV6_ADDR_IS_LINKLOCAL(ip6addr) ((ip6addr)->addr8[0] == 0xfe && ((ip6addr)->addr8[1] & 0xc0) == 0x80)
+#define IPV6_ADDR_IS_SITELOCAL(ip6addr) ((ip6addr)->addr8[0] == 0xfe && ((ip6addr)->addr8[1] & 0xc0) == 0xc0)
 
 #define IPV6_ADDR_MC_SCOPE(ip6addr) ((ip6addr)->addr8[1] & 0x0f)
 
@@ -76,10 +79,11 @@ typedef struct {
 #define IPV6_IFACE_AUTOCONF	    0x40
 #define IPV6_IFACE_TEMPORARY	0x80	
 
+#ifdef COMMENTOUT
 struct ip6_iface {
     struct net_iface iface;
     struct ip6_iface *next; /* unicast */
-    struct ip6_iface *mcnext; /* multicast */
+    //struct ip6_iface *mcnext; /* multicast */
     union {
         struct { 
             ip6_addr_t addr;
@@ -96,6 +100,21 @@ struct ip6_iface {
 #define ip6_addr iface6_un.ip6_addr_filter
 #define ip6_mcaddr iface6_un.ip6_mcaddr_filter
 };
+#endif
+
+struct ip6_iface {
+    struct net_iface iface;
+    struct ip6_iface *next; /* unicast */
+    int slaac; /* slaac enable flag */
+    struct {
+        ip6_addr_t addr;
+        ip6_addr_t netmask;
+        uint8_t prefixlen;
+        uint32_t scope;
+        uint8_t state; /* use with auto-generated addresses */
+    } ip6_addr_filter;
+#define ip6_addr ip6_addr_filter
+};
 
 struct ip6_hdr {
     union {
@@ -111,7 +130,7 @@ struct ip6_hdr {
 #define ip6_flow	ip6_un.ip6_un_flow
 };
 
-/* for compute checksum */
+/* for checksum calculation */
 struct ip6_pseudo_hdr {
     ip6_addr_t src;
     ip6_addr_t dst;
@@ -141,11 +160,10 @@ ip6_endpoint_pton(const char *p, struct ip6_endpoint *n);
 extern char *
 ip6_endpoint_ntop(const struct ip6_endpoint *n, char *p, size_t size);
 
-extern ip6_addr_t *
-ip6_addr_mask(const ip6_addr_t *addr1, const ip6_addr_t *addr2, ip6_addr_t *masked);
-
 extern void 
-ip6_get_solicit_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicit_node_mcaddr);
+ip6_solicited_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
+extern void
+ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr);
 
 extern void
 ip6_dump(const uint8_t *data, size_t len);
@@ -156,7 +174,7 @@ extern struct ip6_iface *
 ip6_route_get_iface(ip6_addr_t dst);
 
 extern struct ip6_iface *
-ip6_iface_alloc(const char *ip6addr, const char *prefix);
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac);
 extern int
 ip6_iface_register(struct net_device *dev, struct ip6_iface *iface);
 extern struct ip6_iface *

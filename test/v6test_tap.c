@@ -89,7 +89,7 @@ main(int argc, char *argv[])
         errorf("loopback_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_NETMASK);
+    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -103,7 +103,7 @@ main(int argc, char *argv[])
         errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_NETMASK);
+    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;

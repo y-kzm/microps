@@ -66,12 +66,30 @@ ether_addr_ntop(const uint8_t *n, char *p, size_t size)
 }
 
 static int
-isether_ipv6multicast(const uint8_t *n)
+ether_addr_ipv6mcaddr(const uint8_t *hwaddr)
 {
-    if (n[0] == 0x33 && n[1] == 0x33) {
-        return 0; 
+    if (hwaddr[0] == 0x33 && hwaddr[1] == 0x33) {
+        return 0;
     }
     return -1;
+}
+
+void
+ether_addr_eui64(const uint8_t *hwaddr, uint8_t *eui64)
+{
+    eui64[0] = hwaddr[0];
+    eui64[1] = hwaddr[1];
+    eui64[2] = hwaddr[2];
+
+    eui64[3] = 0xff;
+    eui64[4] = 0xff;
+
+    eui64[5] = hwaddr[3];
+    eui64[6] = hwaddr[4];
+    eui64[7] = hwaddr[5];
+
+    /* invert the 7th bit */
+    eui64[0] ^= 0x02;
 }
 
 static void
@@ -129,7 +147,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     hdr = (struct ether_hdr *)frame;
     if (memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0) {
         if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
-            if (isether_ipv6multicast(hdr->dst) != 0) {
+            if (ether_addr_ipv6mcaddr(hdr->dst) != 0) {
                 /* for other host */
                 debugf("for other host %s", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
                 return -1;
