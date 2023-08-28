@@ -106,6 +106,11 @@ main(int argc, char *argv[])
         errorf("ether_tap_init() failure");
         return -1;
     }
+
+    if (net_run() == -1) {
+        errorf("net_run() failure");
+        return -1;
+    }
 #ifdef COMMENTOUT
     iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
@@ -117,13 +122,10 @@ main(int argc, char *argv[])
         return -1;
     }
 #endif
-    iface = slaac_iface_alloc(dev);
+    /* Note: iface alloc, register, route set multicast, ns output  */
+    iface = slaac_iface_process(dev);
     if (!iface) {
         errorf("slaac_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
         return -1;
     }
 
@@ -133,10 +135,7 @@ main(int argc, char *argv[])
         return -1;
     }
 #endif
-    if (net_run() == -1) {
-        errorf("net_run() failure");
-        return -1;
-    }
+
     /*
      * Test Code
      */

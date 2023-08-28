@@ -40,10 +40,15 @@ const ip6_addr_t IPV6_LOOPBACK_ADDR =
     IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01);
 // Link-local All-Nodes IPv6 address
 // Link-local All-Routers IPv6 address
+const ip6_addr_t IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR = 
+    IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02);
 // Link-local IPv6 address prefix
 // Solicited-node IPv6 address prefix
 const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
     IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xff, 0x00, 0x00, 0x00);
+// Multicast IPv6 address prefix
+const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX =
+    IPV6_ADDR(0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
 /* reference: https://github.com/freebsd/freebsd-src/blob/main/sys/libkern/inet_pton.c */
 int
@@ -250,7 +255,7 @@ ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr)
     ip6addr->addr16[7] = eui64[3];
 }
 
-static void
+static ip6_addr_t *
 ip6_prefixlen2netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
 {
     int i;
@@ -259,6 +264,8 @@ ip6_prefixlen2netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
     for (i = 0; i < prefixlen / __CHAR_BIT__; i++) {
         netmask->addr8[i] = 0xff;
     }
+
+    return netmask;
 }
 
 static uint32_t 
@@ -320,7 +327,8 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
         return NULL;
     }
     route->network = network;
-    route->netmask = netmask;
+    //route->netmask = netmask;
+    memcpy(route->netmask.addr8, netmask.addr8, IPV6_ADDR_LEN);  // TODO: IPV6_ADDR_COPY(addr1, addr2)
     route->nexthop = nexthop;
     route->iface = iface;
     route->next = routes;
@@ -363,6 +371,21 @@ ip6_route_set_default_gateway(struct ip6_iface *iface, const char *gateway)
         return -1;
     }
     if (!ip6_route_add(IPV6_UNSPECIFIED_ADDR, IPV6_UNSPECIFIED_ADDR, gw, iface)) {
+        errorf("ip6_route_add() failure");
+        return -1;
+    }
+    return 0;
+}
+
+int
+ip6_route_set_multicast(struct ip6_iface *iface)
+{
+    ip6_addr_t mask;
+
+    ip6_prefixlen2netmask(IPV6_MULTICAST_ADDR_PREFIX_LEN, &mask);
+    
+    IPV6_ADDR_MASK(&IPV6_MULTICAST_ADDR_PREFIX, &mask, &mask); 
+    if (!ip6_route_add(IPV6_MULTICAST_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface)) {
         errorf("ip6_route_add() failure");
         return -1;
     }
@@ -594,7 +617,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     ip6_addr_t nexthop;
     
     if (IPV6_ADDR_EQUAL(&src, &IPV6_UNSPECIFIED_ADDR)) {
-        errorf("ip routing does not implement");
+        errorf("invalid source address");
         return -1;
     } else {
         iface = ip6_iface_select(src);

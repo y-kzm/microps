@@ -268,11 +268,77 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
     return ND6_RESOLVE_FOUND;    
 }
 
+// rs_inpout()
+
+int
+nd6_rs_output(struct ip6_iface *iface)
+{
+    uint8_t buf[ICMPV6_BUFSIZ];
+    struct nd_router_solicit *rs;
+    struct ip6_pseudo_hdr pseudo;
+    size_t msg_len;
+    uint16_t psum = 0;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+
+    /* neighbor solicit */
+    rs = (struct nd_router_solicit *)buf;
+    rs->nd_ns_type = ICMPV6_TYPE_ROUTER_SOL;
+    rs->nd_ns_code = 0;
+    rs->nd_ns_sum = 0;
+    rs->nd_ns_reserved = 0;
+    msg_len = sizeof(*rs);
+
+    /* calculate the checksum */
+    pseudo.src = iface->ip6_addr.addr;
+    memcpy(&pseudo.dst, &IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR, IPV6_ADDR_LEN);
+    pseudo.len = hton16(msg_len);
+    pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
+    pseudo.nxt = IPV6_NEXT_ICMPV6;
+    psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
+    rs->nd_ns_sum = cksum16((uint16_t *)buf, msg_len, psum);
+
+    debugf("%s => %s, type=(%u), +msg_len=%zu",
+        ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)),
+        ip6_addr_ntop(pseudo.dst, addr2, sizeof(addr2)),
+        rs->nd_ns_type, msg_len);
+    icmp6_dump((uint8_t *)rs, msg_len);
+    return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
+}
+
+void
+nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("************* implementing now !!! *************");
+    struct nd_router_adv *ra;
+    struct nd_opt_hdr *opt;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+
+    if (len < sizeof(*ra)) {
+        errorf("too short");
+        return;             
+    } 
+    ra = (struct nd_router_adv *)data;
+    
+
+
+
+    debugf("%s => %s, type=(%u), len=%zu",
+        ip6_addr_ntop(src, addr1, sizeof(addr1)),
+        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
+        ra->nd_ra_type, len);
+    //icmp6_dump((uint8_t *)ra, len);
+}
+
+// ra_output()
+
 void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
     struct nd_neighbor_solicit *ns;
-    struct nd_opt *opt;
+    struct nd_opt_hdr *opt;
+    struct nd_opt_lladdr *opt_lladdr;
     int merge = 0;
     char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
@@ -299,7 +365,8 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         errorf("bad target addr");
         return;
     }
-    opt = (struct nd_opt *)(data + sizeof(*ns));
+    opt = (struct nd_opt_hdr *)(data + sizeof(*ns));
+    opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
     // TODO: opt_len check
 
     if (IPV6_ADDR_IS_MULTICAST(&dst)) {
@@ -317,18 +384,18 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     debugf("%s => %s, type=(%u), len=%zu target=%s",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        ns->nd_ns_type, len, ether_addr_ntop(opt->nd_opt_lladdr, lladdr, sizeof(lladdr)));
-    icmp6_dump((uint8_t *)ns, len);
+        ns->nd_ns_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+    //icmp6_dump((uint8_t *)ns, len);
 
     mutex_lock(&mutex);
-    if (nd6_cache_update(src, opt->nd_opt_lladdr)) {
+    if (nd6_cache_update(src, opt_lladdr->lladdr)) {
         /* update */
         merge = 1;
     }
     mutex_unlock(&mutex);
     if (!merge) {
         mutex_lock(&mutex);
-        nd6_cache_insert(src, opt->nd_opt_lladdr, NET_IFACE(iface));
+        nd6_cache_insert(src, opt_lladdr->lladdr, NET_IFACE(iface));
 #ifdef CACHEDUMP
         nd6_cache_show(stderr);
 #endif
@@ -346,7 +413,8 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
 {
     uint8_t buf[ICMPV6_BUFSIZ];
     struct nd_neighbor_solicit *ns;
-    struct nd_lladdr_opt *opt;
+    struct nd_opt_hdr *opt;
+    struct nd_opt_lladdr *opt_lladdr;
     struct ip6_pseudo_hdr pseudo;
     size_t msg_len;
     uint16_t psum = 0;
@@ -362,11 +430,12 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     ns->target = target;
 
     /* option */
-    opt = (struct nd_lladdr_opt *)(ns + 1);
+    opt = (struct nd_opt_hdr *)(ns + 1);
     opt->type = ND_OPT_SOURCE_LINKADDR;
     opt->len = 1;
-    memcpy(opt->lladdr, NET_IFACE(iface)->dev->addr, ETHER_ADDR_LEN);
-    msg_len = sizeof(*ns) + sizeof(*opt); 
+    opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
+    memcpy(opt_lladdr->lladdr, NET_IFACE(iface)->dev->addr, ETHER_ADDR_LEN);
+    msg_len = sizeof(*ns) + sizeof(*opt) + sizeof(*opt_lladdr); 
 
     /* calculate the checksum */
     pseudo.src = iface->ip6_addr.addr;
@@ -389,7 +458,8 @@ void
 nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
     struct nd_neighbor_adv *na;
-    struct nd_opt *opt;
+    struct nd_opt_hdr *opt;
+    struct nd_opt_lladdr *opt_lladdr;
     char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
@@ -399,7 +469,8 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;             
     }
     na = (struct nd_neighbor_adv *)data;
-    opt = (struct nd_opt *)(data + sizeof(*na));
+    opt = (struct nd_opt_hdr *)(data + sizeof(*na));
+    opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
 
     if (IPV6_ADDR_IS_MULTICAST(&na->target)) {
         errorf("bad target addr");
@@ -419,11 +490,11 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     debugf("%s => %s, type=(%u), len=%zu target=%s",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        na->nd_ns_type, len, ether_addr_ntop(opt->nd_opt_lladdr, lladdr, sizeof(lladdr)));
-    icmp6_dump((uint8_t *)na, len);
+        na->nd_ns_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+    //icmp6_dump((uint8_t *)na, len);
 
     mutex_lock(&mutex);
-    if (nd6_cache_update(src, opt->nd_opt_lladdr)) {
+    if (nd6_cache_update(src, opt_lladdr->lladdr)) {
 #ifdef CACHEDUMP
         nd6_cache_show(stderr);
 #endif
@@ -436,7 +507,8 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
 {
     uint8_t buf[ICMPV6_BUFSIZ];
     struct nd_neighbor_adv *na;
-    struct nd_lladdr_opt *opt;
+    struct nd_opt_hdr *opt;
+    struct nd_opt_lladdr *opt_lladdr;
     struct ip6_pseudo_hdr pseudo;
     size_t msg_len;
     uint16_t psum = 0;
@@ -452,12 +524,13 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     na->target = target;
 
     /* option */
-    opt = (struct nd_lladdr_opt *)(na + 1);
+    opt = (struct nd_opt_hdr *)(na + 1);
     opt->type = ND_OPT_TARGET_LINKADDR;
     opt->len = 1;
-    memcpy(opt->lladdr, lladdr, ETHER_ADDR_LEN);
+    opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
+    memcpy(opt_lladdr->lladdr, lladdr, ETHER_ADDR_LEN);
 
-    msg_len = sizeof(*na) + sizeof(*opt) + len; 
+    msg_len = sizeof(*na) + sizeof(*opt) + sizeof(*opt_lladdr); 
     memcpy(buf + msg_len, data, len);
 
     /* calculate the checksum */

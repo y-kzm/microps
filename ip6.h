@@ -142,7 +142,12 @@ struct ip6_pseudo_hdr {
 /* IPv6 addresses */
 extern const ip6_addr_t IPV6_UNSPECIFIED_ADDR;
 extern const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX;
+extern const ip6_addr_t IPV6_LOOPBACK_ADDR;
+extern const ip6_addr_t IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR;
+extern const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX;
+
 #define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
+#define IPV6_MULTICAST_ADDR_PREFIX_LEN 8
 
 #define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 7)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy\0 */
 
@@ -170,6 +175,8 @@ ip6_dump(const uint8_t *data, size_t len);
 
 extern int
 ip6_route_set_default_gateway(struct ip6_iface *iface, const char *gateway);
+extern int
+ip6_route_set_multicast(struct ip6_iface *iface);
 extern struct ip6_iface *
 ip6_route_get_iface(ip6_addr_t dst);
 

@@ -9,6 +9,6 @@
 #include "net.h"
 
 extern struct ip6_iface *
-slaac_iface_alloc(struct net_device *dev);
+slaac_iface_process(struct net_device *dev);
 
 #endif
