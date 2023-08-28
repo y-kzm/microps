@@ -7,6 +7,35 @@
 #include "icmp6.h"
 #include "nd6.h"
 
+static char *
+icmp6_type_ntoa(uint8_t type) {
+    switch (type) {
+    case ICMPV6_TYPE_DEST_UNREACH:
+        return "DestinationUnreachable";
+    case ICMPV6_TYPE_TOO_BIG:
+        return "Too Big"; 
+    case ICMPV6_TYPE_TIME_EXCEEDED:
+        return "Time Exceeded";
+    case ICMPV6_TYPE_PARAM_PROBLEM:
+        return "Parameter Problem";
+    case ICMPV6_TYPE_ECHO_REQUEST:
+        return "Echo Request";
+    case ICMPV6_TYPE_ECHO_REPLY:
+        return "Echo Reply";
+    case ICMPV6_TYPE_ROUTER_SOL:
+        return "Router Solicitation";
+    case ICMPV6_TYPE_ROUTER_ADV:
+        return "Router Advertisement";
+    case ICMPV6_TYPE_NEIGHBOR_SOL:
+        return "Neighbor Solicitation";
+    case ICMPV6_TYPE_NEIGHBOR_ADV:
+        return "Neighbor Advertisement";
+    case ICMPV6_TYPE_REDIRECT:
+        return "Redirect";
+    }
+    return "Unknown";
+}
+
 void 
 icmp6_dump(const uint8_t *data, size_t len)
 {
@@ -20,7 +49,7 @@ icmp6_dump(const uint8_t *data, size_t len)
 
     flockfile(stderr);
     hdr = (struct icmp6_hdr *)data;
-    fprintf(stderr, "       type: %u\n", hdr->icmp6_type);
+    fprintf(stderr, "       type: %s (%u)\n", icmp6_type_ntoa(hdr->icmp6_type), hdr->icmp6_type);
     fprintf(stderr, "       code: %u\n", hdr->icmp6_code);
     fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->icmp6_sum));
     switch (hdr->icmp6_type) {
