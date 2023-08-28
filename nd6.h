@@ -40,9 +40,9 @@ struct nd_router_adv {
     uint8_t o   : 1; // Other configuration
     uint8_t m   : 1; // Management address configuration
 #endif
-    uint16_t lifetime;   // router life time
-    uint32_t reachable;  // reachable time
-    uint32_t retransmit; // retransmit time
+    uint16_t lifetime;        // router life time
+    uint32_t reachable_time;  // reachable time
+    uint32_t retransmit_time; // retransmit time
     /* options follow. */
 };
 
@@ -90,8 +90,23 @@ struct nd_opt_lladdr {
 };
 
 struct nd_opt_prefixinfo {
-
-};
+    uint8_t prefixlen;
+#if defined(_CPU_BIG_ENDIAN)
+    uint8_t l : 1;
+    uint8_t a : 1;
+    uint8_t r : 1;
+    uint8_t reserved : 5;
+#else
+    uint8_t reserved : 5;
+    uint8_t r : 1; // Router address
+    uint8_t a : 1; // Autonomous address-configuration
+    uint8_t l : 1; // On-link
+#endif 
+    uint32_t valid_time;
+    uint32_t preferred_time;
+	uint32_t reserved2;
+	ip6_addr_t prefix;
+} __attribute__((__packed__));
 
 struct nd_opt_redirect {
 
@@ -103,6 +118,11 @@ struct nd_opt_mtu {
 
 extern int
 nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr);
+
+extern void
+nd6_options_dump(const uint8_t *options, size_t len);
+extern void *
+nd6_options(const uint8_t *options, size_t len, uint8_t type);
 
 extern int
 nd6_rs_output(struct ip6_iface *iface);

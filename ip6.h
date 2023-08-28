@@ -169,6 +169,8 @@ extern void
 ip6_solicited_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
 extern void
 ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr);
+extern void
+ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
 
 extern void
 ip6_dump(const uint8_t *data, size_t len);

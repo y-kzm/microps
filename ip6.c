@@ -255,6 +255,20 @@ ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr)
     ip6addr->addr16[7] = eui64[3];
 }
 
+void
+ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
+{
+    ip6addr->addr16[0] = prefix.addr16[0];
+    ip6addr->addr16[1] = prefix.addr16[1];
+    ip6addr->addr16[2] = prefix.addr16[2];
+    ip6addr->addr16[3] = prefix.addr16[3];
+
+    ip6addr->addr16[4] = eui64[0];
+    ip6addr->addr16[5] = eui64[1];
+    ip6addr->addr16[6] = eui64[2];
+    ip6addr->addr16[7] = eui64[3];
+}
+
 static ip6_addr_t *
 ip6_prefixlen2netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
 {

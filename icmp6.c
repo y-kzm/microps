@@ -44,10 +44,7 @@ icmp6_dump(const uint8_t *data, size_t len)
     struct nd_neighbor_solicit *ns;
     struct nd_neighbor_adv *na;
     struct nd_router_adv *ra;
-    struct nd_opt_hdr *opt;
-    struct nd_opt_lladdr *opt_lladdr;
     char addr[IPV6_ADDR_STR_LEN];
-    char lladdr[ETHER_ADDR_STR_LEN];
 
     flockfile(stderr);
     hdr = (struct icmp6_hdr *)data;
@@ -72,31 +69,23 @@ icmp6_dump(const uint8_t *data, size_t len)
     case ICMPV6_TYPE_ROUTER_ADV:
         ra = (struct nd_router_adv *)data;
         fprintf(stderr, " cur hlimit: %u\n", ra->cur_hlim);
-        fprintf(stderr, "      flags: %u(m) | %u(o) | %u(h) | %u(prf) | %u(p) | %u(reserved)\n", ra->m, ra->o, ra->h, ra->prf, ra->p, ra->reserved);
+        fprintf(stderr, "      flags: m=%u, o=%u, h=%u, prf=%u, p=%u, reserved=%u\n", ra->m, ra->o, ra->h, ra->prf, ra->p, ra->reserved);
         fprintf(stderr, "   lifetime: %u\n", ntoh16(ra->lifetime));
-        fprintf(stderr, "  reachable: %u\n", ntoh32(ra->reachable));
-        fprintf(stderr, "  retrasmit: %u\n", ntoh32(ra->retransmit));
-        // option get > option dump
+        fprintf(stderr, "  reachable: %u\n", ntoh32(ra->reachable_time));
+        fprintf(stderr, "  retrasmit: %u\n", ntoh32(ra->retransmit_time));
+        nd6_options_dump((uint8_t *)(ra + 1), len - sizeof(*ra));
         break;
     case ICMPV6_TYPE_NEIGHBOR_SOL:
         ns = (struct nd_neighbor_solicit *)hdr;
         fprintf(stderr, "   reserved: 0x%04x\n", ntoh16(ns->nd_ns_reserved));
         fprintf(stderr, "     target: %s\n", ip6_addr_ntop(ns->target, addr, sizeof(addr)));
-        opt = (struct nd_opt_hdr *)(data + sizeof(*ns));
-        fprintf(stderr, "       type: %u\n", opt->type);
-        fprintf(stderr, "        len: %u\n", opt->len);
-        opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
-        fprintf(stderr, "     lladdr: %s\n", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+        nd6_options_dump((uint8_t *)(ns + 1), len - sizeof(*ns));
         break;
     case ICMPV6_TYPE_NEIGHBOR_ADV:
         na = (struct nd_neighbor_adv *)hdr;
         fprintf(stderr, "   reserved: 0x%04x\n", ntoh16(na->nd_na_reserved));
         fprintf(stderr, "     target: %s\n", ip6_addr_ntop(na->target, addr, sizeof(addr)));
-        opt = (struct nd_opt_hdr *)(data + sizeof(*na));
-        fprintf(stderr, "       type: %u\n", opt->type);
-        fprintf(stderr, "        len: %u\n", opt->len);
-        opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
-        fprintf(stderr, "     lladdr: %s\n", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+        nd6_options_dump((uint8_t *)(na + 1), len - sizeof(*na));
         break;
     case ICMPV6_TYPE_REDIRECT:
         break;

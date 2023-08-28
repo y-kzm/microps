@@ -8,7 +8,9 @@
 
 #include "net.h"
 
+extern void
+slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
 extern struct ip6_iface *
-slaac_iface_process(struct net_device *dev);
+slaac_process_start(struct net_device *dev);
 
 #endif

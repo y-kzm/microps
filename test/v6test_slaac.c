@@ -123,7 +123,7 @@ main(int argc, char *argv[])
     }
 #endif
     /* Note: iface alloc, register, route set multicast, ns output  */
-    iface = slaac_iface_process(dev);
+    iface = slaac_process_start(dev);
     if (!iface) {
         errorf("slaac_iface_alloc() failure");
         return -1;

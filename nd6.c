@@ -12,6 +12,7 @@
 #include "ip6.h"
 #include "icmp6.h"
 #include "nd6.h"
+#include "slaac.h"
 
 #define ND6_CACHE_SIZE    32
 #define ND6_CACHE_TIMEOUT 30 /* seconds */
@@ -268,6 +269,76 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
     return ND6_RESOLVE_FOUND;    
 }
 
+void
+nd6_options_dump(const uint8_t *options, size_t len)
+{
+    struct nd_opt_hdr *opt;
+    size_t i = 0;
+    struct nd_opt_lladdr *opt_lladdr;
+    struct nd_opt_prefixinfo *opt_pi;
+    char lladdr[ETHER_ADDR_STR_LEN];
+    char addr[IPV6_ADDR_STR_LEN];
+
+    flockfile(stderr);
+    while (i <= len) {
+        opt = (struct nd_opt_hdr *)(options + i);
+        if (opt->len == 0) 
+            break;
+        if ((i + (opt->len * 8)) > len) 
+            break;
+        i += (opt->len * 8);
+        fprintf(stderr, "nd opt type: %u\n", opt->type);
+        fprintf(stderr, " nd opt len: %u (%u byte)\n", opt->len, opt->len * 8);
+        switch (opt->type) {
+        case ND_OPT_SOURCE_LINKADDR:
+        case ND_OPT_TARGET_LINKADDR:
+            opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
+            fprintf(stderr, "     lladdr: %s\n", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+            break;
+        case ND_OPT_PREFIX_INFORMATION:
+            opt_pi = (struct nd_opt_prefixinfo *)(opt + 1);
+            fprintf(stderr, "  prefixlen: %u\n", opt_pi->prefixlen);
+            fprintf(stderr, "      flags: l=%u, a=%u, r=%u, reserved=%u\n", opt_pi->l, opt_pi->a, opt_pi->r, opt_pi->reserved);
+            fprintf(stderr, " valid time: %u\n", ntoh32(opt_pi->valid_time)); 
+            fprintf(stderr, "prefer time: %u\n", ntoh32(opt_pi->preferred_time)); 
+            fprintf(stderr, "   reserved: %u\n", ntoh32(opt_pi->reserved2));
+            fprintf(stderr, "     prefix: %s\n", ip6_addr_ntop(opt_pi->prefix, addr, sizeof(addr))); 
+            break;
+        case ND_OPT_REDIRECTED_HEADER:
+        case ND_OPT_MTU:
+        default:
+            debugf("not supported");
+            break;
+        }
+#ifdef HEXDUMP
+        hexdump(stderr, data, len);
+#endif
+    }
+    funlockfile(stderr);
+}
+
+void *
+nd6_options(const uint8_t *options, size_t len, uint8_t type)
+{
+    struct nd_opt_hdr *opt;
+    size_t i = 0;
+
+    while (i <= len) {
+        opt = (struct nd_opt_hdr *)(options + i);
+        if (opt->len == 0) 
+            break;
+        if ((i + (opt->len * 8)) > len) 
+            break;
+        i += (opt->len * 8);
+        if (opt->type == type) {
+            debugf("found option: type=%u, len=%u", opt->type, opt->len);
+            return (opt + 1);
+        }
+    }
+    debugf("could not find option: type=%u", type);
+    return NULL;
+}
+
 // rs_inpout()
 
 int
@@ -311,7 +382,9 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
 {
     debugf("************* implementing now !!! *************");
     struct nd_router_adv *ra;
-    struct nd_opt_hdr *opt;
+    struct nd_opt_lladdr *opt_lladdr;
+    struct nd_opt_prefixinfo *opt_pi;
+    char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
@@ -320,15 +393,19 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;             
     } 
     ra = (struct nd_router_adv *)data;
+    opt_lladdr = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_SOURCE_LINKADDR);
+    opt_pi = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_PREFIX_INFORMATION);
     
+    /* 色々フラグチェック */
 
-
-
-    debugf("%s => %s, type=(%u), len=%zu",
+    debugf("%s => %s, type=(%u), len=%zu, lladdr(src)=%s",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        ra->nd_ra_type, len);
-    //icmp6_dump((uint8_t *)ra, len);
+        ra->nd_ra_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+
+    if (iface->slaac) {
+        slaac_ra_input(data, len, src, dst, iface);
+    }
 }
 
 // ra_output()
@@ -366,7 +443,7 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;
     }
     opt = (struct nd_opt_hdr *)(data + sizeof(*ns));
-    opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
+    opt_lladdr = nd6_options((uint8_t *)(ns + 1), len - sizeof(*ns), ND_OPT_SOURCE_LINKADDR);
     // TODO: opt_len check
 
     if (IPV6_ADDR_IS_MULTICAST(&dst)) {
@@ -458,7 +535,7 @@ void
 nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
     struct nd_neighbor_adv *na;
-    struct nd_opt_hdr *opt;
+    //struct nd_opt_hdr *opt;
     struct nd_opt_lladdr *opt_lladdr;
     char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
@@ -469,8 +546,8 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;             
     }
     na = (struct nd_neighbor_adv *)data;
-    opt = (struct nd_opt_hdr *)(data + sizeof(*na));
-    opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
+    //opt = (struct nd_opt_hdr *)(data + sizeof(*na));
+    opt_lladdr = nd6_options((uint8_t *)(na + 1), len - sizeof(*na), ND_OPT_SOURCE_LINKADDR);
 
     if (IPV6_ADDR_IS_MULTICAST(&na->target)) {
         errorf("bad target addr");
