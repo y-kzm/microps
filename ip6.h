@@ -148,6 +148,7 @@ extern const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX;
 
 #define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
 #define IPV6_MULTICAST_ADDR_PREFIX_LEN 8
+#define IPV6_LINK_LOCAL_ADDR_PREFIX_LEN 64
 
 #define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 7)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy\0 */
 
@@ -171,6 +172,9 @@ extern void
 ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr);
 extern void
 ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
+
+extern struct ip6_iface *
+ip6_rule_addr_select(const ip6_addr_t dst);
 
 extern void
 ip6_dump(const uint8_t *data, size_t len);

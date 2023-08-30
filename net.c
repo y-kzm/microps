@@ -115,9 +115,11 @@ net_device_close(struct net_device *dev)
 int
 net_device_add_iface(struct net_device *dev, struct net_iface *iface)
 {
+    // 同じFamilyのアドレスを複数持てるようにコメントアウト
+    // + ソースアドレスの選択実装
 /*
     struct net_iface *entry;
-    
+
     for (entry = dev->ifaces; entry; entry = entry->next) {
         if (entry->family == iface->family) {
             errorf("already exists, dev=%s, family=%d", dev->name, entry->family);

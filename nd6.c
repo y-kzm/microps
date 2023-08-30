@@ -38,28 +38,8 @@ struct nd6_cache {
 static mutex_t mutex = MUTEX_INITIALIZER;
 static struct nd6_cache caches[ND6_CACHE_SIZE];
 
-static int 
-jenkins_hash(uint8_t *key)
-{
-    int i;
-    uint32_t hash = 0;
-
-    hash = 0;
-    for (i = 0; i < IPV6_ADDR_LEN; i++){
-        hash += key[i];
-        hash += hash << 10;
-        hash ^= hash >> 6;
-    }
-    hash += hash << 3;
-    hash ^= hash >> 11;
-    hash += hash << 15;
-    return hash % ND6_CACHE_SIZE;
-}
-
 /*
- * Neighbor Cache
- *
- * NOTE: Neighbor Cache functions must be called after mutex locked
+ * Neighbor Cache Dump
  */
 #ifdef CACHEDUMP_ENABLE
 static char *
@@ -108,6 +88,30 @@ nd6_cache_show(FILE *fp)
     funlockfile(fp);
 }
 #endif
+
+/*
+ * Neighbor Cache
+ *
+ * NOTE: Neighbor Cache functions must be called after mutex locked
+ */
+
+static int 
+jenkins_hash(uint8_t *key)
+{
+    int i;
+    uint32_t hash = 0;
+
+    hash = 0;
+    for (i = 0; i < IPV6_ADDR_LEN; i++){
+        hash += key[i];
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    hash += hash << 3;
+    hash ^= hash >> 11;
+    hash += hash << 15;
+    return hash % ND6_CACHE_SIZE;
+}
 
 static struct nd6_cache *
 nd6_cache_alloc(int index) 
@@ -269,6 +273,10 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
     return ND6_RESOLVE_FOUND;    
 }
 
+/*
+ * ND6 Options
+ */
+
 void
 nd6_options_dump(const uint8_t *options, size_t len)
 {
@@ -311,7 +319,7 @@ nd6_options_dump(const uint8_t *options, size_t len)
             break;
         }
 #ifdef HEXDUMP
-        hexdump(stderr, data, len);
+        hexdump(stderr, options, len);
 #endif
     }
     funlockfile(stderr);
@@ -331,7 +339,6 @@ nd6_options(const uint8_t *options, size_t len, uint8_t type)
             break;
         i += (opt->len * 8);
         if (opt->type == type) {
-            debugf("found option: type=%u, len=%u", opt->type, opt->len);
             return (opt + 1);
         }
     }
@@ -339,7 +346,11 @@ nd6_options(const uint8_t *options, size_t len, uint8_t type)
     return NULL;
 }
 
-// rs_inpout()
+/*
+ * ND6 input/output
+ */
+
+// TODO: rs_inpout()
 
 int
 nd6_rs_output(struct ip6_iface *iface)
@@ -352,7 +363,7 @@ nd6_rs_output(struct ip6_iface *iface)
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
-    /* neighbor solicit */
+    /* router solicit */
     rs = (struct nd_router_solicit *)buf;
     rs->nd_ns_type = ICMPV6_TYPE_ROUTER_SOL;
     rs->nd_ns_code = 0;
@@ -380,24 +391,57 @@ nd6_rs_output(struct ip6_iface *iface)
 void
 nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("************* implementing now !!! *************");
     struct nd_router_adv *ra;
     struct nd_opt_lladdr *opt_lladdr;
     struct nd_opt_prefixinfo *opt_pi;
     char lladdr[ETHER_ADDR_STR_LEN];
+    int merge = 0;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
     if (len < sizeof(*ra)) {
         errorf("too short");
         return;             
-    } 
-    ra = (struct nd_router_adv *)data;
-    opt_lladdr = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_SOURCE_LINKADDR);
-    opt_pi = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_PREFIX_INFORMATION);
-    
-    /* 色々フラグチェック */
+    }
 
+    /* router advertisement */
+    ra = (struct nd_router_adv *)data;
+    if (ra->m) {
+        debugf("use stateful DHCPv6 to configure addresses");
+        iface->slaac = 0;
+    }
+    if (ra->o) {
+        warnf("use stateful DHCPv6 to obtain non-address information");
+        // iface->slaac.dns = 0
+    }
+
+    /* options */
+    opt_lladdr = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_SOURCE_LINKADDR);
+    mutex_lock(&mutex);
+    if (nd6_cache_update(src, opt_lladdr->lladdr)) {
+        /* update */
+        merge = 1;
+    }
+    mutex_unlock(&mutex);
+    if (!merge) {
+        mutex_lock(&mutex);
+        nd6_cache_insert(src, opt_lladdr->lladdr, NET_IFACE(iface));
+#ifdef CACHEDUMP
+        nd6_cache_show(stderr);
+#endif
+        mutex_unlock(&mutex);
+    }
+
+    opt_pi = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_PREFIX_INFORMATION);
+    if (!opt_pi->l) {
+        warnf("Advertised prefix is not On-link: This case is not yet supported");
+        iface->slaac = 0;
+    }
+    if (!opt_pi->a) {
+        warnf("Autonomous address-configuration is disabled");
+        iface->slaac = 0;
+    }
+    
     debugf("%s => %s, type=(%u), len=%zu, lladdr(src)=%s",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
@@ -408,7 +452,7 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     }
 }
 
-// ra_output()
+// TODO: ra_output()
 
 void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
@@ -425,8 +469,9 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         errorf("too short");
         return;             
     }
-    ns = (struct nd_neighbor_solicit *)data;
 
+    /* neighbor solicit */
+    ns = (struct nd_neighbor_solicit *)data;
     if (!IPV6_ADDR_EQUAL(&dst, &iface->ip6_addr.addr)) {
         if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) != 0) {
             errorf("bad dstination addr");
@@ -442,9 +487,10 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         errorf("bad target addr");
         return;
     }
+
+    /* options */
     opt = (struct nd_opt_hdr *)(data + sizeof(*ns));
     opt_lladdr = nd6_options((uint8_t *)(ns + 1), len - sizeof(*ns), ND_OPT_SOURCE_LINKADDR);
-    // TODO: opt_len check
 
     if (IPV6_ADDR_IS_MULTICAST(&dst)) {
         /**
@@ -462,7 +508,6 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         ns->nd_ns_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
-    //icmp6_dump((uint8_t *)ns, len);
 
     mutex_lock(&mutex);
     if (nd6_cache_update(src, opt_lladdr->lladdr)) {
@@ -506,7 +551,7 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     ns->nd_ns_reserved = 0;
     ns->target = target;
 
-    /* option */
+    /* options */
     opt = (struct nd_opt_hdr *)(ns + 1);
     opt->type = ND_OPT_SOURCE_LINKADDR;
     opt->len = 1;
@@ -535,7 +580,6 @@ void
 nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
     struct nd_neighbor_adv *na;
-    //struct nd_opt_hdr *opt;
     struct nd_opt_lladdr *opt_lladdr;
     char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
@@ -545,30 +589,29 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         errorf("too short");
         return;             
     }
-    na = (struct nd_neighbor_adv *)data;
-    //opt = (struct nd_opt_hdr *)(data + sizeof(*na));
-    opt_lladdr = nd6_options((uint8_t *)(na + 1), len - sizeof(*na), ND_OPT_SOURCE_LINKADDR);
 
+    /* neighbor avertisement */
+    na = (struct nd_neighbor_adv *)data;
+
+    /* options */
+    opt_lladdr = nd6_options((uint8_t *)(na + 1), len - sizeof(*na), ND_OPT_TARGET_LINKADDR);
     if (IPV6_ADDR_IS_MULTICAST(&na->target)) {
         errorf("bad target addr");
         return;
     }
-
     if (!IPV6_ADDR_EQUAL(&dst, &iface->ip6_addr.addr)) {
         if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
             errorf("bad dstination addr");
             return;
         }
-        // if (is_solicited)
     }
 
-    // DAD check: nd6_dad_input()
+    // TODO: DAD nd6_dad_input()
 
     debugf("%s => %s, type=(%u), len=%zu target=%s",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         na->nd_ns_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
-    //icmp6_dump((uint8_t *)na, len);
 
     mutex_lock(&mutex);
     if (nd6_cache_update(src, opt_lladdr->lladdr)) {
@@ -592,6 +635,18 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
+    /* select source address */
+    struct ip6_iface *res;
+
+    res = ip6_rule_addr_select(dst);
+    if (res != NULL) {
+        debugf("selected source address=%s, scope=%u", ip6_addr_ntop(res->ip6_addr.addr, addr1, sizeof(addr1)), res->ip6_addr.scope);
+        memcpy(&src, res->ip6_addr.addr.addr8, IPV6_ADDR_LEN);
+        memcpy((uint8_t *)lladdr, NET_IFACE(res)->dev->addr, ETHER_ADDR_LEN);
+    } else {
+        errorf("no appropriate source address");
+    }
+
     /* neighbor advertisement */
     na = (struct nd_neighbor_adv *)buf;
     na->nd_na_type = ICMPV6_TYPE_NEIGHBOR_ADV;
@@ -600,7 +655,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     na->nd_na_reserved = 0;
     na->target = target;
 
-    /* option */
+    /* options */
     opt = (struct nd_opt_hdr *)(na + 1);
     opt->type = ND_OPT_TARGET_LINKADDR;
     opt->len = 1;
@@ -626,6 +681,10 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     icmp6_dump((uint8_t *)na, msg_len);
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, src, dst);
 }
+
+/*
+ * Misc
+ */
 
 static void 
 nd6_timer(void) 

@@ -27,7 +27,6 @@ struct ip6_route {
     struct ip6_iface *iface;
 };
 
-
 static struct ip6_iface *ifaces;
 static struct ip6_protocol *protocols; 
 static struct ip6_route *routes;
@@ -49,6 +48,10 @@ const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
 // Multicast IPv6 address prefix
 const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX =
     IPV6_ADDR(0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
+
+/*
+ * Utils: ntop/pton
+ */
 
 /* reference: https://github.com/freebsd/freebsd-src/blob/main/sys/libkern/inet_pton.c */
 int
@@ -208,6 +211,41 @@ ip6_endpoint_ntop(const struct ip6_endpoint *n, char *p, size_t size)
     return p;
 }
 
+/*
+ * Dumnp
+ */
+
+void
+ip6_dump(const uint8_t *data, size_t len)
+{
+    struct ip6_hdr *hdr;
+    uint8_t v, tc;
+    uint32_t flow;
+    char addr[IPV6_ADDR_STR_LEN];
+
+    flockfile(stderr);
+    hdr = (struct ip6_hdr *)data;
+    v = (hdr->ip6_vfc & 0xf0) >> 4;
+    fprintf(stderr, "        ver: %u\n", v);
+    tc = (hdr->ip6_vfc >> 4 & 0xf0);
+    fprintf(stderr, "         tc: 0x%02x\n", tc);
+    flow = (ntoh32(hdr->ip6_flow) & 0x000fffff);
+    fprintf(stderr, "       flow: 0x%04x\n", flow);
+    fprintf(stderr, "       plen: %u byte\n", ntoh16(hdr->ip6_plen));
+    fprintf(stderr, "       next: %u\n", hdr->ip6_nxt);
+    fprintf(stderr, "       hlim: %u\n", hdr->ip6_hlim);
+    fprintf(stderr, "        src: %s\n", ip6_addr_ntop(hdr->ip6_src, addr, sizeof(addr)));
+    fprintf(stderr, "        dst: %s\n", ip6_addr_ntop(hdr->ip6_dst, addr, sizeof(addr)));
+#ifdef HEXDUMP
+    hexdump(stderr, data, len);
+#endif
+    funlockfile(stderr);
+}
+
+/*
+ * Address-related functions
+ */
+
 void 
 ip6_solicited_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr)
 {
@@ -298,32 +336,36 @@ ip6_get_addr_scope(const ip6_addr_t *ip6addr)
     }
 }
 
-void
-ip6_dump(const uint8_t *data, size_t len)
-{
-    struct ip6_hdr *hdr;
-    uint8_t v, tc;
-    uint32_t flow;
-    char addr[IPV6_ADDR_STR_LEN];
+/*
+ * Rules
+ */
 
-    flockfile(stderr);
-    hdr = (struct ip6_hdr *)data;
-    v = (hdr->ip6_vfc & 0xf0) >> 4;
-    fprintf(stderr, "        ver: %u\n", v);
-    tc = (hdr->ip6_vfc >> 4 & 0xf0);
-    fprintf(stderr, "         tc: 0x%02x\n", tc);
-    flow = (ntoh32(hdr->ip6_flow) & 0x000fffff);
-    fprintf(stderr, "       flow: 0x%04x\n", flow);
-    fprintf(stderr, "       plen: %u byte\n", ntoh16(hdr->ip6_plen));
-    fprintf(stderr, "       next: %u\n", hdr->ip6_nxt);
-    fprintf(stderr, "       hlim: %u\n", hdr->ip6_hlim);
-    fprintf(stderr, "        src: %s\n", ip6_addr_ntop(hdr->ip6_src, addr, sizeof(addr)));
-    fprintf(stderr, "        dst: %s\n", ip6_addr_ntop(hdr->ip6_dst, addr, sizeof(addr)));
-#ifdef HEXDUMP
-    hexdump(stderr, data, len);
-#endif
-    funlockfile(stderr);
+struct ip6_iface *
+ip6_rule_addr_select(const ip6_addr_t dst)
+{
+    struct ip6_iface *res, *entry;
+    uint32_t scope = ip6_get_addr_scope(&dst);
+
+    // Rule1: Prefer same address
+    res = ip6_iface_select(dst);
+    if (res != NULL)
+        return res;
+
+    // Rule2: Prefer appropriate scope
+    // 宛先アドレスのスコープより大きいスコープを持つ（到達可能性がある）アドレスの中でもっともスコープが小さいものを選択する
+    for (entry = ifaces; entry; entry = entry->next) {
+        if (ip6_get_addr_scope(&dst) <= entry->ip6_addr.scope) {
+            if (entry->ip6_addr.scope <= scope)
+                res = entry;
+            scope = entry->ip6_addr.scope;
+        }
+    }
+    return res;
 }
+
+/*
+ * Routing
+ */
 
 /* NOTE: must not be call after net_run() */
 static struct ip6_route *
@@ -341,7 +383,6 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
         return NULL;
     }
     route->network = network;
-    //route->netmask = netmask;
     memcpy(route->netmask.addr8, netmask.addr8, IPV6_ADDR_LEN);  // TODO: IPV6_ADDR_COPY(addr1, addr2)
     route->nexthop = nexthop;
     route->iface = iface;
@@ -357,20 +398,38 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
     return route;
 }
 
-// TODO: 効率化（トライ木構造）
+// TODO: trie/prefix tree
 static struct ip6_route *
 ip6_route_lookup(ip6_addr_t dst)
 {
     struct ip6_route *route, *candidate = NULL;
     ip6_addr_t masked;
+#ifdef FIB_DUMP /* for dubug */
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+    char addr3[IPV6_ADDR_STR_LEN]; 
 
+    flockfile(stderr);
+    fprintf(stderr, "network                                  netmask                                  nexthop                                  interface\n");
+#endif
     for (route = routes; route; route = route->next) {
-        IPV6_ADDR_MASK(&dst, &route->netmask, &masked); 
+        IPV6_ADDR_MASK(&dst, &route->netmask, &masked);
+#ifdef FIB_DUMP
+        fprintf(stderr, "%-40s %-40s %-40s %s\n", 
+                ip6_addr_ntop(route->network, addr1, sizeof(addr1)), 
+                ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
+                ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)), 
+                route->iface->iface.dev->name);
+#endif
         if (IPV6_ADDR_EQUAL(&masked, &route->network)) {
-            // TODO: ロンゲストマッチング
+            // TODO: Longest Matching
             candidate = route;
         }
     }
+#ifdef FIB_DUMP
+    funlockfile(stderr);
+#endif
+
     return candidate;
 }
 
@@ -417,6 +476,10 @@ ip6_route_get_iface(ip6_addr_t dst)
     }
     return route->iface;
 }
+
+/*
+ * iface
+ */
 
 struct ip6_iface *
 ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac)
@@ -480,10 +543,14 @@ ip6_iface_select(ip6_addr_t addr)
     return entry;
 }
 
+/*
+ * IPv6 input/output
+ */
+
 static void
 ip6_input_hbh()
 {
-    debugf("*********** called ip6_input_hbh() ***********");
+    debugf("--------------------- called ip6_input_hbh(): Hop-by-Hop ---------------------");
 }
 
 static void
@@ -562,19 +629,19 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 static void
 route6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("*********** called route6_input() ***********");
+    debugf("---------------------  called route6_input(): Routing ---------------------");
 }
 
 static void
 frag6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("*********** called frag6_input() ***********");
+    debugf("--------------------- called frag6_input(): Fragment ---------------------");
 }
 
 static void
 dest6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("*********** called dest6_input() ***********");
+    debugf("--------------------- called dest6_input(): Destination ---------------------");
 }
 
 static int
@@ -629,7 +696,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     struct ip6_iface *iface;
     char addr[IPV6_ADDR_STR_LEN];
     ip6_addr_t nexthop;
-    
+
     if (IPV6_ADDR_EQUAL(&src, &IPV6_UNSPECIFIED_ADDR)) {
         errorf("invalid source address");
         return -1;
@@ -645,7 +712,10 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
         errorf("no route to host, addr=%s", ip6_addr_ntop(dst, addr, sizeof(addr)));
         return -1;
     }
-    iface = route->iface;
+    // マルチキャスト宛のときは置き換えない
+    if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
+        iface = route->iface;
+    }
     if (!IPV6_ADDR_EQUAL(&src, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_EQUAL(&src, &iface->ip6_addr.addr)) {
         errorf("unable to output with specified source address, addr=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
         return -1;
@@ -663,6 +733,10 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     
     return len;
 }
+
+/*
+ * Misc
+ */
 
 int
 ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface))
@@ -696,7 +770,6 @@ ip6_init(void)
         errorf("net_protocol_register() failure");
         return -1;
     }
-
     if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;

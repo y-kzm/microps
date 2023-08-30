@@ -7,6 +7,10 @@
 #include "icmp6.h"
 #include "nd6.h"
 
+/*
+ * Dump
+ */
+
 static char *
 icmp6_type_ntoa(uint8_t type) {
     switch (type) {
@@ -59,10 +63,12 @@ icmp6_dump(const uint8_t *data, size_t len)
     case ICMPV6_TYPE_ECHO_REQUEST:
         echo = (struct icmp6_echo *)hdr;
         fprintf(stderr, "         id: %u\n", ntoh16(echo->icmp6_id));
+        fprintf(stderr, "        seq: %u\n", ntoh16(echo->icmp6_seq));
         break;
     case ICMPV6_TYPE_ECHO_REPLY:
         echo = (struct icmp6_echo *)hdr;
         fprintf(stderr, "         id: %u\n", ntoh16(echo->icmp6_id));
+        fprintf(stderr, "        seq: %u\n", ntoh16(echo->icmp6_seq));
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
         break;
@@ -98,6 +104,10 @@ icmp6_dump(const uint8_t *data, size_t len)
     funlockfile(stderr);
 }
 
+/*
+ * ICMPv6 input/output
+ */
+
 void
 icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
@@ -114,7 +124,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     }
 
     if (IPV6_ADDR_IS_MULTICAST(&dst)) {
-        // TODO: マルチキャストフィルタのルックアップ
+        // TODO: 
     }
 
     hdr = (struct icmp6_hdr *)data;
@@ -203,36 +213,51 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
 }
 
 int 
-icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, size_t len, ip6_addr_t src, ip6_addr_t dst)
+icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
 {
     uint8_t buf[ICMPV6_BUFSIZ];
     struct icmp6_hdr *hdr;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];  
     struct ip6_pseudo_hdr pseudo;
-    uint16_t total, psum = 0;
+    size_t total;
+    uint16_t psum = 0;
 
+    /* select source address */
+    struct ip6_iface *res;
+
+    res = ip6_rule_addr_select(dst);
+    if (res != NULL) {
+        debugf("selected source address=%s, scope=%u", ip6_addr_ntop(res->ip6_addr.addr, addr1, sizeof(addr1)), res->ip6_addr.scope);
+        memcpy(&src, res->ip6_addr.addr.addr8, IPV6_ADDR_LEN);
+    } else {
+        errorf("no appropriate source address");
+        return -1;
+    }
+
+    /* icmp6 header */
     hdr = (struct icmp6_hdr *)buf;
     hdr->icmp6_type = type;
     hdr->icmp6_code = code;
     hdr->icmp6_sum = 0;
     hdr->icmp6_flag_reserved = flags;
-    memcpy(hdr + 1, data, len);
+
     total = sizeof(*hdr) + len;
+    memcpy(buf + sizeof(*hdr), data, len);
 
     /* calculate checksum value */
     pseudo.src = src;
     pseudo.dst = dst;
-    pseudo.len = hton16(total);
+    pseudo.len = hton32(total);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = IPV6_NEXT_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->icmp6_sum = cksum16((uint16_t *)buf, total, psum);
 
-    debugf("%s => %s, type=(%u), len=%zu",
+    debugf("%s => %s, type=(%u), len=%zu +hdr_len=%zu, total=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        hdr->icmp6_type, total);
+        hdr->icmp6_type, len, sizeof(*hdr), total);
     icmp6_dump((uint8_t *)hdr, total);
-    return ip6_output(IPV6_NEXT_ICMPV6, (uint8_t *)hdr, total, src, dst);
+    return ip6_output(IPV6_NEXT_ICMPV6, buf, total, src, dst);
 }

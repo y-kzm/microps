@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <string.h>
 
 #include "util.h"
 #include "net.h"
@@ -33,7 +34,6 @@ main(int argc, char *argv[])
     struct ip6_iface *iface;
     ip6_addr_t src = IPV6_UNSPECIFIED_ADDR, dst;
     uint16_t id, seq = 0;
-    //size_t offset = IPV6_HDR_SIZE + ICMPV6_HDR_SIZE;
 
     /*
      * Parse command line parameters
@@ -72,84 +72,56 @@ main(int argc, char *argv[])
         fprintf(stderr, "Usage: %s [-n] [src] dst\n", argv[0]);
         return -1;
     }
-    /*
+
+    /* ==================================================================== */
+    /* ==================================================================== */
+    /* 
      * Setup protocol stack
      */
+    // init proto stack
     signal(SIGINT, on_signal);
     if (net_init() == -1) {
         errorf("net_init() failure");
         return -1;
     }
-#ifdef COMMENTOUT
-    dev = null_init();
-    if (!dev) {
-        errorf("null_init() failure");
-        return -1;
-    }
-    dev = loopback_init();
-    if (!dev) {
-        errorf("loopback_init() failure");
-        return -1;
-    }
-    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
-    if (!iface) {
-        errorf("ip6_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
-        return -1;
-    }
-#endif
+    // init devices
     dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
     if (!dev) {
         errorf("ether_tap_init() failure");
         return -1;
     }
-
+    // start proto stack
     if (net_run() == -1) {
         errorf("net_run() failure");
         return -1;
     }
-#ifdef COMMENTOUT
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
-    if (!iface) {
-        errorf("ip6_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
-        return -1;
-    }
-#endif
-    /* Note: iface alloc, register, route set multicast, ns output  */
-    iface = slaac_process_start(dev);
-    if (!iface) {
-        errorf("slaac_iface_alloc() failure");
-        return -1;
-    }
 
-#ifdef COMMENTOUT
-    if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
-        errorf("ip6_route_set_default_gateway() failure");
+    // start SLAAC: alloc autoconf-iface, register autoconf-iface
+    iface = slaac_run(dev);
+    if (!iface) {
+        errorf("slaac_init() failure");
         return -1;
-    }
-#endif
+    } 
+    sleep(3); /* waito for address autoconfiguration */
+    /* ==================================================================== */
+    /* ==================================================================== */
 
     /*
-     * Test Code
+     * Test Code: ping
      */
     id = getpid() % UINT16_MAX;
     while (!terminate) {
         if (!noop) {
-            debugf("########## Send Echo Request !!! ##########");
+            debugf("<--------------------------- Send echo request --------------------------->");
             if (icmp6_output(ICMPV6_TYPE_ECHO_REQUEST, 0, hton32(id << 16 | ++seq), echo_data, sizeof(echo_data), src, dst) == -1) {
                 errorf("icmpv6_output() failure");
                 break;
             }
+            debugf("<---------------------------  Eend of loop...  --------------------------->");
         }
         sleep(1);
     }
+
     /*
      * Cleanup protocol stack
      */

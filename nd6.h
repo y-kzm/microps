@@ -109,11 +109,11 @@ struct nd_opt_prefixinfo {
 } __attribute__((__packed__));
 
 struct nd_opt_redirect {
-
+    // TODO: 
 };
 
 struct nd_opt_mtu {
-
+    // TODO: 
 };
 
 extern int
