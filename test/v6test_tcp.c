@@ -40,20 +40,6 @@ setup(void)
         errorf("net_init() failure");
         return -1;
     }
-    dev = loopback_init();
-    if (!dev) {
-        errorf("loopback_init() failure");
-        return -1;
-    }
-    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
-    if (!iface) {
-        errorf("ip6_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
-        return -1;
-    }
     dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
     if (!dev) {
         errorf("ether_tap_init() failure");
@@ -96,8 +82,7 @@ main(int argc, char *argv[])
         return -1;
     }
 
-    ip6_endpoint_pton("[::]80", &local);
-    //ip6_endpoint_pton("[2001:db8::1]10007", &foreign);
+    ip6_endpoint_pton("[2001:db8::2]80", &local);
     soc = tcp6_open_rfc793(&local, NULL, 0);
     if (soc == -1) {
         errorf("tcp6_open_rfc793() failure");
@@ -112,12 +97,7 @@ main(int argc, char *argv[])
         "<html><head><title>hello</title></head><body>world</body></html>";
     tcp6_send(soc, (uint8_t *)response, strlen(response));
     tcp6_close(soc);
-
-/*
-    while (!terminate) {
-        sleep(1);
-    }
-*/
+    
     cleanup();
     return 0;
 }
