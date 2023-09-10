@@ -10,6 +10,7 @@
 #include "ip6.h"
 #include "icmp6.h"
 #include "slaac.h"
+#include "udp.h"
 
 #include "driver/null.h"
 #include "driver/loopback.h"
@@ -24,6 +25,7 @@ on_signal(int s)
 {
     (void)s;
     terminate = 1;
+    close(0); /* close STDIN */
 }
 
 int
@@ -33,7 +35,6 @@ main(int argc, char *argv[])
     struct net_device *dev;
     struct ip6_iface *iface;
     ip6_addr_t src = IPV6_UNSPECIFIED_ADDR, dst;
-    uint16_t id, seq = 0;
 
     /*
      * Parse command line parameters
@@ -109,6 +110,7 @@ main(int argc, char *argv[])
     /*
      * Test Code: ping
      */
+    uint16_t id, seq = 0;
     id = getpid() % UINT16_MAX;
     while (!terminate) {
         if (!noop) {
@@ -121,6 +123,31 @@ main(int argc, char *argv[])
         }
         sleep(1);
     }
+
+#ifdef COMMENTOUT
+    int soc;
+    struct ip6_endpoint foreign;
+    uint8_t buf[1024];
+
+    soc = udp6_open();
+    if (soc == -1) {
+        errorf("udp6_open() failure");
+        return -1;
+    }
+    ip6_endpoint_pton("[2001:db8::1]10007",  &foreign);
+    while (!terminate) {
+        debugf("<--------------------------- Send udp message --------------------------->");
+        if (!fgets((char *)buf, sizeof(buf), stdin)) {
+            break;
+        }
+        if (udp6_sendto(soc, buf, strlen((char *)buf), &foreign) == -1) {
+            errorf("udp6_sendto() failure");
+            break;
+        }
+        debugf("<---------------------------  Eend of loop...  --------------------------->");
+    }
+    udp6_close(soc);
+#endif
 
     /*
      * Cleanup protocol stack

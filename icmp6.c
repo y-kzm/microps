@@ -40,6 +40,28 @@ icmp6_type_ntoa(uint8_t type) {
     return "Unknown";
 }
 
+/*
+static char *
+icmp6_ra_flg_ntoa(uint8_t flg)
+{
+#define ND6_RA_FLAG_ISSET(x, y) ((x & 0x3f) & (y) ? 1 : 0)
+#define ND6_RA_FLAG_MGMT 0x01
+#define ND6_RA_FLAG_OTHER 0x02
+#define ND6_RA_FLAG_HOME 0x04
+
+    static char str[9];
+
+    snprintf(str, sizeof(str), "--%c%c%c%c%c%c",
+        TCP_FLG_ISSET(flg, TCP_FLG_URG) ? 'U' : '-',
+        TCP_FLG_ISSET(flg, TCP_FLG_ACK) ? 'A' : '-',
+        TCP_FLG_ISSET(flg, TCP_FLG_PSH) ? 'P' : '-',
+        TCP_FLG_ISSET(flg, TCP_FLG_RST) ? 'R' : '-',
+        TCP_FLG_ISSET(flg, TCP_FLG_SYN) ? 'S' : '-',
+        TCP_FLG_ISSET(flg, TCP_FLG_FIN) ? 'F' : '-');
+    return str;
+}
+*/
+
 void 
 icmp6_dump(const uint8_t *data, size_t len)
 {
@@ -76,6 +98,7 @@ icmp6_dump(const uint8_t *data, size_t len)
         ra = (struct nd_router_adv *)data;
         fprintf(stderr, " cur hlimit: %u\n", ra->cur_hlim);
         fprintf(stderr, "      flags: m=%u, o=%u, h=%u, prf=%u, p=%u, reserved=%u\n", ra->m, ra->o, ra->h, ra->prf, ra->p, ra->reserved);
+        //fprintf(stderr, "      flags: 0x%02x (%s)\n", , icmp6_ra_flg_ntoa(hdr->flg));
         fprintf(stderr, "   lifetime: %u\n", ntoh16(ra->lifetime));
         fprintf(stderr, "  reachable: %u\n", ntoh32(ra->reachable_time));
         fprintf(stderr, "  retrasmit: %u\n", ntoh32(ra->retransmit_time));
@@ -231,7 +254,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
         debugf("selected source address=%s, scope=%u", ip6_addr_ntop(res->ip6_addr.addr, addr1, sizeof(addr1)), res->ip6_addr.scope);
         memcpy(&src, res->ip6_addr.addr.addr8, IPV6_ADDR_LEN);
     } else {
-        errorf("no appropriate source address");
+        warnf("no appropriate source address");
         return -1;
     }
 

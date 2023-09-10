@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #include "util.h"
 #include "net.h"
@@ -101,6 +102,7 @@ main(int argc, char *argv[])
     }
     ip6_endpoint_pton("[2001:db8::1]10007",  &foreign);
     while (!terminate) {
+        debugf("<--------------------------- Send udp message --------------------------->");
         if (!fgets((char *)buf, sizeof(buf), stdin)) {
             break;
         }
@@ -108,6 +110,7 @@ main(int argc, char *argv[])
             errorf("udp6_sendto() failure");
             break;
         }
+        debugf("<---------------------------  Eend of loop...  --------------------------->");
     }
     udp6_close(soc);
     cleanup();

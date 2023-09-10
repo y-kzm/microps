@@ -134,9 +134,13 @@ main(int argc, char *argv[])
         }
         sleep(1);
     }
+
     /*
      * Cleanup protocol stack
      */
     net_shutdown();
+
+
+
     return 0;
 }

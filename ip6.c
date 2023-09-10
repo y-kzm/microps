@@ -367,37 +367,6 @@ ip6_rule_addr_select(const ip6_addr_t dst)
  * Routing
  */
 
-/* NOTE: must not be call after net_run() */
-static struct ip6_route *
-ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct ip6_iface *iface)
-{
-    struct ip6_route *route;
-    char addr1[IPV6_ADDR_STR_LEN];
-    char addr2[IPV6_ADDR_STR_LEN];
-    char addr3[IPV6_ADDR_STR_LEN];
-    char addr4[IPV6_ADDR_STR_LEN];
-
-    route = memory_alloc(sizeof(*route));
-    if (!route) {
-        errorf("memory_alloc() failure");
-        return NULL;
-    }
-    route->network = network;
-    memcpy(route->netmask.addr8, netmask.addr8, IPV6_ADDR_LEN);  // TODO: IPV6_ADDR_COPY(addr1, addr2)
-    route->nexthop = nexthop;
-    route->iface = iface;
-    route->next = routes;
-    routes = route;
-    infof("network=%s, netmask=%s, nexthop=%s, iface=%s dev=%s",
-        ip6_addr_ntop(route->network, addr1, sizeof(addr1)),
-        ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
-        ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)),
-        ip6_addr_ntop(route->iface->ip6_addr.addr, addr4, sizeof(addr4)),
-        NET_IFACE(iface)->dev->name
-    );
-    return route;
-}
-
 // TODO: trie/prefix tree
 static struct ip6_route *
 ip6_route_lookup(ip6_addr_t dst)
@@ -431,6 +400,45 @@ ip6_route_lookup(ip6_addr_t dst)
 #endif
 
     return candidate;
+}
+
+/* NOTE: must not be call after net_run() */
+static struct ip6_route *
+ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct ip6_iface *iface)
+{
+    struct ip6_route *route;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+    char addr3[IPV6_ADDR_STR_LEN];
+    char addr4[IPV6_ADDR_STR_LEN];
+
+    route = memory_alloc(sizeof(*route));
+    if (!route) {
+        errorf("memory_alloc() failure");
+        return NULL;
+    }
+
+    /*
+    if (ip6_route_lookup(network) != NULL) {
+        debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
+        return NULL;
+    }
+    */
+    
+    route->network = network;
+    memcpy(route->netmask.addr8, netmask.addr8, IPV6_ADDR_LEN);  // TODO: IPV6_ADDR_COPY(addr1, addr2)
+    route->nexthop = nexthop;
+    route->iface = iface;
+    route->next = routes;
+    routes = route;
+    infof("network=%s, netmask=%s, nexthop=%s, iface=%s dev=%s",
+        ip6_addr_ntop(route->network, addr1, sizeof(addr1)),
+        ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
+        ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)),
+        ip6_addr_ntop(route->iface->ip6_addr.addr, addr4, sizeof(addr4)),
+        NET_IFACE(iface)->dev->name
+    );
+    return route;
 }
 
 /* NOTE: must not be call after net_run() */

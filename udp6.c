@@ -16,15 +16,15 @@ struct udp6_pcb {
     int state;
     struct ip6_endpoint local;
     struct queue_head queue; /* receive queue */
-    int wc; /* wait count */
-    //struct sched_ctx ctx;
+    //int wc; /* wait count */
+    struct sched_ctx ctx;
 };
 
 /* NOTE: the data follows immediately after the structure */
 struct udp6_queue_entry {
     struct ip6_endpoint foreign;
     uint16_t len;
-    uint8_t data[];
+    //uint8_t data[];
 };
 
 static mutex_t mutex = MUTEX_INITIALIZER;
@@ -44,7 +44,7 @@ udp6_pcb_alloc(void)
     for (pcb = pcbs; pcb < tailof(pcbs); pcb++) {
         if (pcb->state == UDP_PCB_STATE_FREE) {
             pcb->state = UDP_PCB_STATE_OPEN;
-            //sched_ctx_init(&pcb->ctx);
+            sched_ctx_init(&pcb->ctx);
             return pcb;
         }
     }
@@ -57,12 +57,8 @@ udp6_pcb_release(struct udp6_pcb *pcb)
     struct queue_entry *entry;
 
     pcb->state = UDP_PCB_STATE_CLOSING;
-    //if (sched_ctx_destroy(&pcb->ctx) == -1) {
-    //    sched_wakeup(&pcb->ctx);
-    //    return;
-    //}
-    if (pcb->wc) {
-        pcb->state = UDP_PCB_STATE_CLOSING;
+    if (sched_ctx_destroy(&pcb->ctx) == -1) {
+        sched_wakeup(&pcb->ctx);
         return;
     }
     pcb->state = UDP_PCB_STATE_FREE;
@@ -110,6 +106,10 @@ udp6_pcb_id(struct udp6_pcb *pcb)
 {
     return indexof(pcbs, pcb);
 }
+
+/*
+ * UDP6 input/output
+ */
 
 static void
 udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
@@ -164,13 +164,13 @@ udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     entry->foreign.addr = src;
     entry->foreign.port = hdr->src;
     entry->len = len - sizeof(*hdr);
-    memcpy(entry->data, hdr + 1, entry->len);  // "entry + 1" > "entry->data"
+    memcpy(entry + 1, hdr + 1, entry->len);
     if (!queue_push(&pcb->queue, entry)) {
         mutex_unlock(&mutex);
         errorf("queue_push() failure");
         return;
     }
-    //sched_wakeup(&pcb->ctx);
+    sched_wakeup(&pcb->ctx);
     mutex_unlock(&mutex);
 }
 
@@ -269,8 +269,8 @@ int
 udp6_bind(int id, struct ip6_endpoint *local)
 {
     struct udp6_pcb *pcb, *exist;
-    char ep1[IP_ENDPOINT_STR_LEN];
-    char ep2[IP_ENDPOINT_STR_LEN];
+    char ep1[IPV6_ENDPOINT_STR_LEN];
+    char ep2[IPV6_ENDPOINT_STR_LEN];
 
     mutex_lock(&mutex);
     pcb = udp6_pcb_get(id);
@@ -358,11 +358,12 @@ udp6_recvfrom(int id, uint8_t *buf, size_t size, struct ip6_endpoint *foreign)
         if (entry) {
             break;
         }
-        pcb->wc++;
-        mutex_unlock(&mutex);
-        sleep(1);
-        mutex_lock(&mutex);
-        pcb->wc--;
+        if (sched_sleep(&pcb->ctx, &mutex, NULL) == -1) {
+            debugf("interrupted");
+            mutex_unlock(&mutex);
+            errno = EINTR;
+            return -1;
+        }
         if (pcb->state == UDP_PCB_STATE_CLOSING) {
             debugf("closed");
             udp6_pcb_release(pcb);
@@ -375,7 +376,7 @@ udp6_recvfrom(int id, uint8_t *buf, size_t size, struct ip6_endpoint *foreign)
         *foreign = entry->foreign;
     }
     len = MIN(size, entry->len); /* truncate */
-    memcpy(buf, entry->data, len);
+    memcpy(buf, entry + 1, len);
     memory_free(entry);
     return len;
 

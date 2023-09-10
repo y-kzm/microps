@@ -644,7 +644,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
         memcpy(&src, res->ip6_addr.addr.addr8, IPV6_ADDR_LEN);
         memcpy((uint8_t *)lladdr, NET_IFACE(res)->dev->addr, ETHER_ADDR_LEN);
     } else {
-        errorf("no appropriate source address");
+        warnf("no appropriate source address");
     }
 
     /* neighbor advertisement */

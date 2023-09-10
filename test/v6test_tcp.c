@@ -5,12 +5,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 
 #include "util.h"
 #include "net.h"
 #include "ip6.h"
 #include "icmp6.h"
-#include "udp.h"
+#include "tcp.h"
 
 #include "driver/loopback.h"
 #include "driver/ether_tap.h"
@@ -22,6 +23,7 @@ static volatile sig_atomic_t terminate;
 static void
 on_signal(int s)
 {
+    sleep(1);
     (void)s;
     terminate = 1;
     net_interrupt();
@@ -86,46 +88,36 @@ cleanup(void)
 int
 main(int argc, char *argv[])
 {
+    struct ip6_endpoint local;
     int soc;
-    struct ip6_endpoint local, foreign;
-    uint8_t buf[1024];
-    ssize_t ret;
-    char ep[IPV6_ENDPOINT_STR_LEN];
 
     if (setup() == -1) {
-        errorf("setup() failure");
+        errorf("setup() failure"); 
         return -1;
     }
-    soc = udp6_open();
+
+    ip6_endpoint_pton("[::]80", &local);
+    //ip6_endpoint_pton("[2001:db8::1]10007", &foreign);
+    soc = tcp6_open_rfc793(&local, NULL, 0);
     if (soc == -1) {
-        errorf("udp6_open() failure");
+        errorf("tcp6_open_rfc793() failure");
         return -1;
     }
-    ip6_endpoint_pton("[::]7", &local);
-    if (udp6_bind(soc, &local) == -1) {
-        errorf("udp6_bind() failure");
-        udp6_close(soc);
-        return -1;
-    }
-    debugf("waiting for data...");
+
+    uint8_t buf[2048];
+    tcp6_receive(soc, buf, sizeof(buf));
+    char *response =
+        "HTTP/1.1 200 OK\r\n"
+        "\r\n"
+        "<html><head><title>hello</title></head><body>world</body></html>";
+    tcp6_send(soc, (uint8_t *)response, strlen(response));
+    tcp6_close(soc);
+
+/*
     while (!terminate) {
-        ret = udp6_recvfrom(soc, buf, sizeof(buf), &foreign);
-        if (ret == -1) {
-            if (errno == EINTR) {
-                continue;
-            }
-            errorf("udp6_recvfrom() failure");
-            break;
-        }
-        debugf("%zd bytes data form %s", ret, ip6_endpoint_ntop(&foreign, ep, sizeof(ep)));
-        hexdump(stderr, buf, ret);
-        if (udp6_sendto(soc, buf, ret, &foreign) == -1) {
-            errorf("udp6_sendto() failure");
-            break;
-        }
+        sleep(1);
     }
-    udp6_close(soc);
+*/
     cleanup();
     return 0;
-
 }
