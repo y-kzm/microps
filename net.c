@@ -399,6 +399,10 @@ net_init(void)
         errorf("icmp_init() failure");
         return -1;
     }
+    if (icmp6_init() == -1) {
+        errorf("icmp6_init() failure");
+        return -1;
+    }
     if (udp_init() == -1) {
         errorf("udp_init() failure");
         return -1;

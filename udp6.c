@@ -147,7 +147,9 @@ udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
         ip6_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
+#ifdef HDRDUMP
     udp_dump(data, len);
+#endif
     mutex_lock(&mutex);
     pcb = udp6_pcb_select(dst, hdr->dst);
     if (!pcb) {
@@ -207,7 +209,9 @@ udp6_output(struct ip6_endpoint *src, struct ip6_endpoint *dst, const  uint8_t *
     hdr->sum = cksum16((uint16_t *)buf, total, psum);
     debugf("%s => %s, len=%zu (payload=%zu)",
         ip6_endpoint_ntop(src, ep1, sizeof(ep1)), ip6_endpoint_ntop(dst, ep2, sizeof(ep2)), total, len);
+#ifdef HDRDUMP
     udp_dump((uint8_t *)hdr, total);
+#endif
     if (ip6_output(IPV6_NEXT_UDP, (uint8_t *)hdr, total, src->addr, dst->addr) == -1) {
         errorf("ip6_output() failure");
         return -1;

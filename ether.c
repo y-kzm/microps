@@ -65,6 +65,7 @@ ether_addr_ntop(const uint8_t *n, char *p, size_t size)
     return p;
 }
 
+/* Brief: ipv6 addr to mac addr */
 static int
 ether_addr_ipv6mcaddr(const uint8_t *hwaddr)
 {
@@ -126,7 +127,9 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
     }
     flen = sizeof(*hdr) + len + pad;
     debugf("dev=%s, type=%s(0x%04x), len=%zu", dev->name, ether_type_ntoa(hdr->type), type, flen);
+#ifdef HDRDUMP
     ether_dump(frame, flen);
+#endif
     return callback(dev, frame, flen) == (ssize_t)flen ? 0 : -1;
 }
 
@@ -156,7 +159,9 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     }
     type = ntoh16(hdr->type);
     debugf("dev=%s, type=%s(0x%04x), len=%zu", dev->name, ether_type_ntoa(hdr->type), type, flen);
+#ifdef HDRDUMP
     ether_dump(frame, flen);
+#endif
     return net_input_handler(type, (uint8_t *)(hdr + 1), flen - sizeof(*hdr), dev);
 }
 

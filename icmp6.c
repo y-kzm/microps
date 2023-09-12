@@ -169,7 +169,9 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, len,
         ip6_addr_ntop(iface->ip6_addr.addr, addr3, sizeof(addr3)));
+#ifdef HDRDUMP
     icmp6_dump(data, len);
+#endif
         
     switch (hdr->icmp6_type) {
     case ICMPV6_TYPE_DEST_UNREACH:
@@ -252,7 +254,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
     res = ip6_rule_addr_select(dst);
     if (res != NULL) {
         debugf("selected source address=%s, scope=%u", ip6_addr_ntop(res->ip6_addr.addr, addr1, sizeof(addr1)), res->ip6_addr.scope);
-        memcpy(&src, res->ip6_addr.addr.addr8, IPV6_ADDR_LEN);
+        IPV6_ADDR_COPY(&src, &res->ip6_addr.addr, IPV6_ADDR_LEN);
     } else {
         warnf("no appropriate source address");
         return -1;
@@ -281,6 +283,18 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, len, sizeof(*hdr), total);
+#ifdef HDRDUMP
     icmp6_dump((uint8_t *)hdr, total);
+#endif
     return ip6_output(IPV6_NEXT_ICMPV6, buf, total, src, dst);
+}
+
+int
+icmp6_init(void)
+{
+    if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
+        errorf("ip6_protocol_register() failure");
+        return -1;
+    }
+    return 0;
 }

@@ -14,8 +14,7 @@
 #include "tcp.h"
 
 #include "driver/loopback.h"
-//#include "driver/ether_pcap.h"
-#include "driver/ether_tap.h"
+#include "driver/ether_pcap.h"
 
 #include "test.h"
 
@@ -25,7 +24,6 @@ static void
 on_signal(int s)
 {
     sleep(1);
-    close(1);
     (void)s;
     terminate = 1;
     net_interrupt();
@@ -42,12 +40,12 @@ setup(void)
         errorf("net_init() failure");
         return -1;
     }
-    dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
+    dev = ether_pcap_init(ETHER_PCAP_NAME, ETHER_PCAP_HW_ADDR);
     if (!dev) {
         errorf("ether_pcap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
+    iface = ip6_iface_alloc(ETHER_PCAP_IPV6_ADDR, ETHER_PCAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -80,13 +78,17 @@ main(int argc, char *argv[])
     int soc;
     ssize_t ret;
     uint8_t buf[2048];
+    char *response =
+        "HTTP/1.1 200 OK\r\n"
+        "\r\n"
+        "<html><head><title>hello</title></head><body>Hello World</body></html>";
 
     if (setup() == -1) {
         errorf("setup() failure"); 
         return -1;
     }
 
-    ip6_endpoint_pton("[2001:db8::2]7", &local);
+    ip6_endpoint_pton("[fd09:471d:e8d3:1a0c::beef]80", &local);
     soc = tcp6_open_rfc793(&local, NULL, 0);
     if (soc == -1) {
         errorf("tcp6_open_rfc793() failure");
@@ -100,7 +102,8 @@ main(int argc, char *argv[])
             break;
         }
         hexdump(stderr, buf, ret);
-        tcp6_send(soc, (uint8_t *)buf, ret);
+        tcp6_send(soc, (uint8_t *)response, strlen(response));
+        //tcp6_send(soc, buf, ret);
     }
 
     tcp6_close(soc);

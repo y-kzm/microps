@@ -10,6 +10,7 @@ TESTS = test/test.exe \
         test/v6test_udp_cli.exe \
         test/v6test_slaac.exe \
         test/v6test_tcp.exe \
+        test/v6test_tcp_pcap.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -66,9 +67,9 @@ clean:
 tap:
 	sudo ./script/tap.sh
 
-setup:
-	sudo ./script/setup.sh
-
-cleanup:
-	sudo ip --all netns delete
+#setup:
+#	sudo ./script/setup.sh
+#
+#cleanup:
+#	sudo ip --all netns delete
 

@@ -4,27 +4,28 @@
 #include <stdint.h>
 
 /* loopback */
-#define LOOPBACK_IP_ADDR "127.0.0.1"
-#define LOOPBACK_NETMASK "255.0.0.0"
-#define LOOPBACK_IPV6_ADDR "::1"
-#define LOOPBACK_IPV6_PREFIXLEN 128
+#define LOOPBACK_IP_ADDR            "127.0.0.1"
+#define LOOPBACK_NETMASK            "255.0.0.0"
+#define LOOPBACK_IPV6_ADDR          "::1"
+#define LOOPBACK_IPV6_PREFIXLEN     128
 
 /* tap */
-#define ETHER_TAP_NAME    "tap0"
-#define ETHER_TAP_HW_ADDR "00:00:5e:00:53:01"
-#define ETHER_TAP_IP_ADDR "192.0.2.2"
-#define ETHER_TAP_NETMASK "255.255.255.0"
-#define ETHER_TAP_IPV6_ADDR "2001:db8::2"
-#define ETHER_TAP_IPV6_PREFIXLEN 64
+#define ETHER_TAP_NAME              "tap0"
+#define ETHER_TAP_HW_ADDR           "00:00:5e:00:53:01"
+#define ETHER_TAP_IP_ADDR           "192.0.2.2"
+#define ETHER_TAP_NETMASK           "255.255.255.0"
+#define ETHER_TAP_IPV6_ADDR         "2001:db8::2"
+#define ETHER_TAP_IPV6_PREFIXLEN    64
 
-/* raw */
-#define ETHER_PCAP_NAME    "Host1-veth0"
-#define ETHER_PCAP_HW_ADDR "00:00:5e:00:53:01"
-#define ETHER_PCAP_IPV6_ADDR "fd00:cafe:dead:1::2"
-#define ETHER_PCAP_IPV6_PREFIXLEN 64
+/* pcap */
+#define ETHER_PCAP_NAME             "enp0s1"
+#define ETHER_PCAP_HW_ADDR          "00:00:5e:00:53:02"
+#define ETHER_PCAP_IPV6_ADDR        "fd09:471d:e8d3:1a0c::beef"
+#define ETHER_PCAP_IPV6_PREFIXLEN   64
 
-#define DEFAULT_GATEWAY "192.0.2.1"
-#define IPV6_DEFAULT_GATEWAY "fd00:cafe:dead:1::1"
+/* default route */
+#define DEFAULT_GATEWAY         "192.0.2.1"
+#define IPV6_DEFAULT_GATEWAY    "fd09:471d:e8d3:1a0c:1897:ccf0:1945:a470"
 
 const uint8_t test_data[] = {
     0x60, 0x0a, 0x09, 0x00, 

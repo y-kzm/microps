@@ -38,8 +38,8 @@ struct tcp6_pcb {
     struct sched_ctx ctx;
     struct queue_head queue; /* retransmit queue */
     struct timeval tw_timer;
-    //struct tcp_pcb *parent;
-    //struct queue_head backlog;
+    struct tcp6_pcb *parent;
+    struct queue_head backlog;
 };
 
 static mutex_t mutex = MUTEX_INITIALIZER;
@@ -203,6 +203,14 @@ tcp6_retransmit_queue_emit(void *arg, void *data)
     }
 }
 
+static void
+tcp6_set_timewait_timer(struct tcp6_pcb *pcb)
+{
+    gettimeofday(&pcb->tw_timer, NULL);
+    pcb->tw_timer.tv_sec += TCP_TIMEWAIT_SEC;
+    debugf("start time_wait timer: %d seconds", TCP_TIMEWAIT_SEC);
+}
+
 /*
  * TCP6 input/output
  */
@@ -241,7 +249,9 @@ tcp6_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8
 
     debugf("%s => %s, len=%zu (payload=%zu)",
         ip6_endpoint_ntop(local, ep1, sizeof(ep1)), ip6_endpoint_ntop(foreign, ep2, sizeof(ep2)), total, len);
+#ifdef HDRDUMP
     tcp_dump((uint8_t *)hdr, total);
+#endif
     if (ip6_output(IPV6_NEXT_TCP, (uint8_t *)hdr, total, local->addr, foreign->addr) == -1) {
         return -1;
     }
@@ -446,6 +456,210 @@ tcp6_segment_arrives(struct tcp_segment_info *seg, uint8_t flags, uint8_t *data,
          * numbers may be held for later processing.
          */
     }
+    /*
+     * second check the RST bit
+     */
+    switch (pcb->state) {
+    case TCP_PCB_STATE_SYN_RECEIVED:
+        if (TCP_FLG_ISSET(flags, TCP_FLG_RST)) {
+            pcb->state = TCP_PCB_STATE_CLOSED;
+            tcp6_pcb_release(pcb);
+            return;
+        }
+        break;
+    case TCP_PCB_STATE_ESTABLISHED:
+    case TCP_PCB_STATE_FIN_WAIT1:
+    case TCP_PCB_STATE_FIN_WAIT2:
+    case TCP_PCB_STATE_CLOSE_WAIT:
+        if (TCP_FLG_ISSET(flags, TCP_FLG_RST)) {
+            errorf("connection reset");
+            pcb->state = TCP_PCB_STATE_CLOSED;
+            tcp6_pcb_release(pcb);
+            return;
+        }
+        break;
+    case TCP_PCB_STATE_CLOSING:
+    case TCP_PCB_STATE_LAST_ACK:
+    case TCP_PCB_STATE_TIME_WAIT:
+        if (TCP_FLG_ISSET(flags, TCP_FLG_RST)) {
+            pcb->state = TCP_PCB_STATE_CLOSED;
+            tcp6_pcb_release(pcb);
+            return;
+        }
+        break;
+    }
+    /*
+     * ignore: third check security and precedence
+     */
+    /*
+     * fourth check the SYN bit
+     */
+    switch (pcb->state) {
+    case TCP_PCB_STATE_SYN_RECEIVED:
+    case TCP_PCB_STATE_ESTABLISHED:
+    case TCP_PCB_STATE_FIN_WAIT1:
+    case TCP_PCB_STATE_FIN_WAIT2:
+    case TCP_PCB_STATE_CLOSE_WAIT:
+    case TCP_PCB_STATE_CLOSING:
+    case TCP_PCB_STATE_LAST_ACK:
+    case TCP_PCB_STATE_TIME_WAIT:
+        if (TCP_FLG_ISSET(flags, TCP_FLG_SYN)) {
+            tcp6_output(pcb, TCP_FLG_RST, NULL, 0);
+            errorf("connection reset");
+            pcb->state = TCP_PCB_STATE_CLOSED;
+            tcp6_pcb_release(pcb);
+            return;
+        }
+    }
+    /*
+     * fifth check the ACK field
+     */
+    if (!TCP_FLG_ISSET(flags, TCP_FLG_ACK)) {
+        /* drop segment */
+        return;
+    }
+    switch (pcb->state) {
+    case TCP_PCB_STATE_SYN_RECEIVED:
+        if (pcb->snd.una <= seg->ack && seg->ack <= pcb->snd.nxt) {
+            pcb->state = TCP_PCB_STATE_ESTABLISHED;
+            sched_wakeup(&pcb->ctx);
+            if (pcb->parent) {
+                queue_push(&pcb->parent->backlog, pcb);
+                sched_wakeup(&pcb->parent->ctx);
+            }
+        } else {
+            tcp6_output_segment(seg->ack, 0, TCP_FLG_RST, 0, NULL, 0, local, foreign);
+            return;
+        }
+        /* fall through */
+    case TCP_PCB_STATE_ESTABLISHED:
+    case TCP_PCB_STATE_FIN_WAIT1:
+    case TCP_PCB_STATE_FIN_WAIT2:
+    case TCP_PCB_STATE_CLOSE_WAIT:
+    case TCP_PCB_STATE_CLOSING:
+        if (pcb->snd.una < seg->ack && seg->ack <= pcb->snd.nxt) {
+            pcb->snd.una = seg->ack;
+            tcp6_retransmit_queue_cleanup(pcb);
+            /* ignore: Users should receive positive acknowledgments for buffers
+                        which have been SENT and fully acknowledged (i.e., SEND buffer should be returned with "ok" response) */
+            if (pcb->snd.wl1 < seg->seq || (pcb->snd.wl1 == seg->seq && pcb->snd.wl2 <= seg->ack)) {
+                pcb->snd.wnd = seg->wnd;
+                pcb->snd.wl1 = seg->seq;
+                pcb->snd.wl2 = seg->ack;
+            }
+        } else if (seg->ack < pcb->snd.una) {
+            /* ignore */
+        } else if (seg->ack > pcb->snd.nxt) {
+            tcp6_output(pcb, TCP_FLG_ACK, NULL, 0);
+            return;
+        }
+        switch (pcb->state) {
+        case TCP_PCB_STATE_FIN_WAIT1:
+            if (seg->ack == pcb->snd.nxt) {
+                pcb->state = TCP_PCB_STATE_FIN_WAIT2;
+            }
+            break;
+        case TCP_PCB_STATE_FIN_WAIT2:
+            /* do not delete the TCB */
+            break;
+        case TCP_PCB_STATE_CLOSE_WAIT:
+            /* do nothing */
+            break;
+        case TCP_PCB_STATE_CLOSING:
+            if (seg->ack == pcb->snd.nxt) {
+                pcb->state = TCP_PCB_STATE_TIME_WAIT;
+                /* NOTE: set 2MSL timer, although it is not explicitly stated in the RFC */
+                tcp6_set_timewait_timer(pcb);
+                sched_wakeup(&pcb->ctx);
+            }
+            break;
+        }
+        break;
+    case TCP_PCB_STATE_LAST_ACK:
+        if (seg->ack == pcb->snd.nxt) {
+            pcb->state = TCP_PCB_STATE_CLOSED;
+            tcp6_pcb_release(pcb);
+        }
+        return;
+    case TCP_PCB_STATE_TIME_WAIT:
+        if (TCP_FLG_ISSET(flags, TCP_FLG_FIN)) {
+            tcp6_set_timewait_timer(pcb); /* restart time-wait timer */
+        }
+        break;
+    }
+    /*
+     * ignore: sixth, check the URG bit
+     */
+    /*
+     * seventh, process the segment text
+     */
+    switch (pcb->state) {
+    case TCP_PCB_STATE_ESTABLISHED:
+    case TCP_PCB_STATE_FIN_WAIT1:
+    case TCP_PCB_STATE_FIN_WAIT2:
+        if (len) {
+            memcpy(pcb->buf + (sizeof(pcb->buf) - pcb->rcv.wnd), data, len);
+            pcb->rcv.nxt = seg->seq + seg->len;
+            pcb->rcv.wnd -= len;
+            tcp6_output(pcb, TCP_FLG_ACK, NULL, 0);
+            sched_wakeup(&pcb->ctx);
+        }
+        break;
+    case TCP_PCB_STATE_CLOSE_WAIT:
+    case TCP_PCB_STATE_CLOSING:
+    case TCP_PCB_STATE_LAST_ACK:
+    case TCP_PCB_STATE_TIME_WAIT:
+        /* ignore segment text */
+        break;
+    }
+
+    /*
+     * eighth, check the FIN bit
+     */
+    if (TCP_FLG_ISSET(flags, TCP_FLG_FIN)) {
+        switch (pcb->state) {
+        case TCP_PCB_STATE_CLOSED:
+        case TCP_PCB_STATE_LISTEN:
+        case TCP_PCB_STATE_SYN_SENT:
+            /* drop segment */
+            return;
+        }
+        pcb->rcv.nxt = seg->seq + 1;
+        tcp6_output(pcb, TCP_FLG_ACK, NULL, 0);
+        switch (pcb->state) {
+        case TCP_PCB_STATE_SYN_RECEIVED:
+        case TCP_PCB_STATE_ESTABLISHED:
+            pcb->state = TCP_PCB_STATE_CLOSE_WAIT;
+            sched_wakeup(&pcb->ctx);
+            break;
+        case TCP_PCB_STATE_FIN_WAIT1:
+            if (seg->ack == pcb->snd.nxt) {
+                pcb->state = TCP_PCB_STATE_TIME_WAIT;
+                tcp6_set_timewait_timer(pcb);
+            } else {
+                pcb->state = TCP_PCB_STATE_CLOSING;
+            }
+            break;
+        case TCP_PCB_STATE_FIN_WAIT2:
+            pcb->state = TCP_PCB_STATE_TIME_WAIT;
+            tcp6_set_timewait_timer(pcb);
+            break;
+        case TCP_PCB_STATE_CLOSE_WAIT:
+            /* Remain in the CLOSE-WAIT state */
+            break;
+        case TCP_PCB_STATE_CLOSING:
+            /* Remain in the CLOSING state */
+            break;
+        case TCP_PCB_STATE_LAST_ACK:
+            /* Remain in the LAST-ACK state */
+            break;
+        case TCP_PCB_STATE_TIME_WAIT:
+            /* Remain in the TIME-WAIT state */
+            tcp6_set_timewait_timer(pcb); /* restart time-wait timer */
+            break;
+        }
+    }
+    return;
 }
 
 static void
@@ -485,7 +699,9 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
         ip6_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
+#ifdef HDRDUMP
     tcp_dump(data, len);
+#endif
 
     local.addr = dst;
     local.port = hdr->dst;
@@ -540,6 +756,20 @@ tcp6_timer(void)
 //static void
 //event_handler(void *arg)
 
+static void
+event_handler(void *arg)
+{
+    struct tcp6_pcb *pcb;
+
+    mutex_lock(&mutex);
+    for (pcb = pcbs; pcb < tailof(pcbs); pcb++) {
+        if (pcb->state != TCP_PCB_STATE_FREE) {
+            sched_interrupt(&pcb->ctx);
+        }
+    }
+    mutex_unlock(&mutex);
+}
+
 int 
 tcp6_init(void)
 {
@@ -553,7 +783,7 @@ tcp6_init(void)
         errorf("net_timer_register() failure");
         return -1;
     }
-    //net_event_subscribe(event_handler, NULL);
+    net_event_subscribe(event_handler, NULL);
     
     return 0;
 }
@@ -626,7 +856,7 @@ AGAIN:
         return -1;
     }
     id = tcp6_pcb_id(pcb);
-    debugf("connection established: local=%s, foreign=%s",
+    debugf(">>>>>>>>>>>>>>>> connection established: local=%s, foreign=%s",
         ip6_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)), ip6_endpoint_ntop(&pcb->foreign, ep2, sizeof(ep2)));
     mutex_unlock(&mutex);
     return id;

@@ -38,10 +38,14 @@ const ip6_addr_t IPV6_UNSPECIFIED_ADDR =
 const ip6_addr_t IPV6_LOOPBACK_ADDR = 
     IPV6_ADDR(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01);
 // Link-local All-Nodes IPv6 address
+const ip6_addr_t IPV6_LINK_LOCAL_ALL_NODES_ADDR = 
+    IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01);
 // Link-local All-Routers IPv6 address
 const ip6_addr_t IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR = 
     IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02);
 // Link-local IPv6 address prefix
+const ip6_addr_t IPV6_LINK_LOCAL_ADDR_PREFIX = 
+    IPV6_ADDR(0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 // Solicited-node IPv6 address prefix
 const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
     IPV6_ADDR(0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xff, 0x00, 0x00, 0x00);
@@ -50,7 +54,7 @@ const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX =
     IPV6_ADDR(0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
 /*
- * Utils: ntop/pton
+ * Utils
  */
 
 /* reference: https://github.com/freebsd/freebsd-src/blob/main/sys/libkern/inet_pton.c */
@@ -242,8 +246,28 @@ ip6_dump(const uint8_t *data, size_t len)
     funlockfile(stderr);
 }
 
+void
+ip6_fib_dump()
+{
+    struct ip6_route *route;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+    char addr3[IPV6_ADDR_STR_LEN]; 
+    
+    flockfile(stderr);
+    fprintf(stderr, "network                                  netmask                                  nexthop                                  interface\n");
+    for (route = routes; route; route = route->next) {
+        fprintf(stderr, "%-40s %-40s %-40s %s\n", 
+                ip6_addr_ntop(route->network, addr1, sizeof(addr1)), 
+                ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
+                ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)), 
+                route->iface->iface.dev->name);
+    }
+    funlockfile(stderr);
+}
+
 /*
- * Address-related functions
+ * Address-related
  */
 
 void 
@@ -255,12 +279,14 @@ ip6_solicited_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_m
         errorf("%s is not unicast address", ip6_addr_ntop(ip6addr, addr, sizeof(addr)));
         return;
     }
-    memcpy(solicited_node_mcaddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / __CHAR_BIT__);
+    IPV6_ADDR_COPY(solicited_node_mcaddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / __CHAR_BIT__);
+
     solicited_node_mcaddr->addr8[13] = ip6addr.addr8[13];
     solicited_node_mcaddr->addr8[14] = ip6addr.addr8[14];
     solicited_node_mcaddr->addr8[15] = ip6addr.addr8[15];
 }
 
+/* Brief: generate multicast addr from mac addr by UEI-64 */
 static void
 ip6_mcaddr2mac(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
 {
@@ -279,6 +305,7 @@ ip6_mcaddr2mac(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
     hwaddr[5] = ip6mcaddr.addr8[15];
 }
 
+/* Brief: eui-64 addr to link local addr */
 void
 ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr)
 {
@@ -293,6 +320,7 @@ ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr)
     ip6addr->addr16[7] = eui64[3];
 }
 
+/* Brief: eui-64 addr to global addr */
 void
 ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
 {
@@ -307,6 +335,7 @@ ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uin
     ip6addr->addr16[7] = eui64[3];
 }
 
+/* Brief: prefix length to netmask */
 static ip6_addr_t *
 ip6_prefixlen2netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
 {
@@ -367,37 +396,18 @@ ip6_rule_addr_select(const ip6_addr_t dst)
  * Routing
  */
 
-// TODO: trie/prefix tree
 static struct ip6_route *
 ip6_route_lookup(ip6_addr_t dst)
 {
     struct ip6_route *route, *candidate = NULL;
     ip6_addr_t masked;
-#ifdef FIB_DUMP /* for dubug */
-    char addr1[IPV6_ADDR_STR_LEN];
-    char addr2[IPV6_ADDR_STR_LEN];
-    char addr3[IPV6_ADDR_STR_LEN]; 
-
-    flockfile(stderr);
-    fprintf(stderr, "network                                  netmask                                  nexthop                                  interface\n");
-#endif
     for (route = routes; route; route = route->next) {
         IPV6_ADDR_MASK(&dst, &route->netmask, &masked);
-#ifdef FIB_DUMP
-        fprintf(stderr, "%-40s %-40s %-40s %s\n", 
-                ip6_addr_ntop(route->network, addr1, sizeof(addr1)), 
-                ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
-                ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)), 
-                route->iface->iface.dev->name);
-#endif
         if (IPV6_ADDR_EQUAL(&masked, &route->network)) {
             // TODO: Longest Matching
             candidate = route;
         }
     }
-#ifdef FIB_DUMP
-    funlockfile(stderr);
-#endif
 
     return candidate;
 }
@@ -426,7 +436,7 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
     */
     
     route->network = network;
-    memcpy(route->netmask.addr8, netmask.addr8, IPV6_ADDR_LEN);  // TODO: IPV6_ADDR_COPY(addr1, addr2)
+    IPV6_ADDR_COPY(&route->netmask, &netmask, IPV6_ADDR_LEN);
     route->nexthop = nexthop;
     route->iface = iface;
     route->next = routes;
@@ -552,7 +562,7 @@ ip6_iface_select(ip6_addr_t addr)
 }
 
 /*
- * IPv6 input/output
+ * IPv6 I/O
  */
 
 static void
@@ -619,7 +629,9 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 
     debugf("dev=%s, iface=%s, next=%u, len=%u, frame=%u",
         dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE + ETHER_HDR_SIZE);
+#ifdef HDRDUMP
     ip6_dump(data, len);
+#endif
     
     if (hdr->ip6_nxt == IPV6_NEXT_HOP_BY_HOP) {
         ip6_input_hbh();
@@ -692,7 +704,9 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     memcpy(hdr+1, data, len);  
     debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
         NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), len, sizeof*hdr);
+#ifdef HDRDUMP
     ip6_dump(buf, sizeof(*hdr));
+#endif
 
     return ip6_output_device(iface, buf, len + sizeof(*hdr), nexthop);
 }
@@ -778,10 +792,8 @@ ip6_init(void)
         errorf("net_protocol_register() failure");
         return -1;
     }
-    if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
-        errorf("ip6_protocol_register() failure");
-        return -1;
-    }
+
+    /* Extension headers */
     if (ip6_protocol_register("ROUING", IPV6_NEXT_ROUTING, route6_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;

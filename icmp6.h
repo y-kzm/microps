@@ -46,4 +46,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
 extern int 
 icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t*data, size_t len, ip6_addr_t src, ip6_addr_t dst);
 
+extern int
+icmp6_init(void);
+
 #endif

@@ -41,7 +41,7 @@ static struct nd6_cache caches[ND6_CACHE_SIZE];
 /*
  * Neighbor Cache Dump
  */
-#ifdef CACHEDUMP_ENABLE
+
 static char *
 nd6_state_ntoa(uint8_t state) {
     switch (state) {
@@ -64,7 +64,7 @@ nd6_state_ntoa(uint8_t state) {
 }
 
 static void
-nd6_cache_show(FILE *fp)
+nd6_cache_dump(FILE *fp)
 {
     struct nd6_cache *entry = caches;
     char addr1[IPV6_ADDR_STR_LEN];
@@ -87,7 +87,6 @@ nd6_cache_show(FILE *fp)
     fprintf(fp, "+---------------------------------------------------------------------------+\n");
     funlockfile(fp);
 }
-#endif
 
 /*
  * Neighbor Cache
@@ -254,7 +253,7 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
             return ND6_RESOLVE_ERROR;
         }
         cache->state = ND6_STATE_INCOMPLETE;
-        memcpy(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
+        IPV6_ADDR_COPY(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
         gettimeofday(&cache->timestamp, NULL);
         nd6_ns_output(iface, ip6addr);
         mutex_unlock(&mutex);
@@ -373,7 +372,7 @@ nd6_rs_output(struct ip6_iface *iface)
 
     /* calculate the checksum */
     pseudo.src = iface->ip6_addr.addr;
-    memcpy(&pseudo.dst, &IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR, IPV6_ADDR_LEN);
+    IPV6_ADDR_COPY(&pseudo.dst, &IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR, IPV6_ADDR_LEN);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = IPV6_NEXT_ICMPV6;
@@ -384,7 +383,9 @@ nd6_rs_output(struct ip6_iface *iface)
         ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)),
         ip6_addr_ntop(pseudo.dst, addr2, sizeof(addr2)),
         rs->nd_ns_type, msg_len);
+#ifdef HDRDUMP
     icmp6_dump((uint8_t *)rs, msg_len);
+#endif
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
 }
 
@@ -426,8 +427,8 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     if (!merge) {
         mutex_lock(&mutex);
         nd6_cache_insert(src, opt_lladdr->lladdr, NET_IFACE(iface));
-#ifdef CACHEDUMP
-        nd6_cache_show(stderr);
+#ifdef ND6CACHEDUMP
+        nd6_cache_dump(stderr);
 #endif
         mutex_unlock(&mutex);
     }
@@ -451,8 +452,6 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         slaac_ra_input(data, len, src, dst, iface);
     }
 }
-
-// TODO: ra_output()
 
 void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
@@ -572,7 +571,9 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
         ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)),
         ip6_addr_ntop(pseudo.dst, addr2, sizeof(addr2)),
         ns->nd_ns_type, msg_len);
+#ifdef HDRDUMP
     icmp6_dump((uint8_t *)ns, msg_len);
+#endif
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
 }
 
@@ -641,7 +642,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     res = ip6_rule_addr_select(dst);
     if (res != NULL) {
         debugf("selected source address=%s, scope=%u", ip6_addr_ntop(res->ip6_addr.addr, addr1, sizeof(addr1)), res->ip6_addr.scope);
-        memcpy(&src, res->ip6_addr.addr.addr8, IPV6_ADDR_LEN);
+        IPV6_ADDR_COPY(&src, &res->ip6_addr.addr, IPV6_ADDR_LEN);
         memcpy((uint8_t *)lladdr, NET_IFACE(res)->dev->addr, ETHER_ADDR_LEN);
     } else {
         warnf("no appropriate source address");
@@ -678,7 +679,9 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         na->nd_na_type, len, msg_len);
+#ifdef HDRDUMP
     icmp6_dump((uint8_t *)na, msg_len);
+#endif
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, src, dst);
 }
 

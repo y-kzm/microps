@@ -2,6 +2,7 @@
 #define IP6_H
 
 #include <stdio.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -18,12 +19,14 @@
 #define IPV6_ADDR_LEN       16
 #define IPV6_ADDR_LEN16     8
 #define IPV6_ADDR_LEN32     4
-#define IPV6_ADDR_STR_LEN   40 /* "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
+#define IPV6_ADDR_STR_LEN   40  /* "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
+#define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 7)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy\0 */
 #define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
     x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
 
 /* macros for address checking */
 #define IPV6_ADDR_EQUAL(addr1, addr2) (memcmp((addr1)->addr8, (addr2)->addr8, IPV6_ADDR_LEN) == 0)
+#define IPV6_ADDR_COPY(addr1, addr2, prefixlen) (memcpy((addr1)->addr8, (addr2)->addr8, prefixlen))
 #define IPV6_ADDR_MASK(addr1, addr2, masked)  {                          \
         (masked)->addr32[0] = (addr1)->addr32[0] & (addr2)->addr32[0]; \
         (masked)->addr32[1] = (addr1)->addr32[1] & (addr2)->addr32[1]; \
@@ -35,7 +38,6 @@
 #define IPV6_ADDR_IS_LOOPBACK(ip6addr) IPV6_ADDR_EQUAL(ip6addr, &IPV6_LOOPBACK_ADDR)
 #define IPV6_ADDR_IS_LINKLOCAL(ip6addr) ((ip6addr)->addr8[0] == 0xfe && ((ip6addr)->addr8[1] & 0xc0) == 0x80)
 #define IPV6_ADDR_IS_SITELOCAL(ip6addr) ((ip6addr)->addr8[0] == 0xfe && ((ip6addr)->addr8[1] & 0xc0) == 0xc0)
-
 #define IPV6_ADDR_MC_SCOPE(ip6addr) ((ip6addr)->addr8[1] & 0x0f)
 
 /* ipv6 address scope */
@@ -79,39 +81,16 @@ typedef struct {
 #define IPV6_IFACE_AUTOCONF	    0x40
 #define IPV6_IFACE_TEMPORARY	0x80	
 
-#ifdef COMMENTOUT
 struct ip6_iface {
     struct net_iface iface;
     struct ip6_iface *next; /* unicast */
-    //struct ip6_iface *mcnext; /* multicast */
-    union {
-        struct { 
-            ip6_addr_t addr;
-            ip6_addr_t prefix;
-            uint8_t prefixlen;
-            uint32_t scope;
-            uint8_t state; /* use with auto-generated addresses */
-        } ip6_addr_filter;
-        struct {
-            ip6_addr_t mcaddr;
-            // var for MLD (state, flag, ...)
-        } ip6_mcaddr_filter;
-    } iface6_un;
-#define ip6_addr iface6_un.ip6_addr_filter
-#define ip6_mcaddr iface6_un.ip6_mcaddr_filter
-};
-#endif
-
-struct ip6_iface {
-    struct net_iface iface;
-    struct ip6_iface *next; /* unicast */
-    int slaac; /* slaac enable flag */
+    int slaac;              /* slaac enable flag */
     struct {
         ip6_addr_t addr;
         ip6_addr_t netmask;
         uint8_t prefixlen;
         uint32_t scope;
-        uint8_t state; /* use with auto-generated addresses */
+        uint8_t state;      /* use with auto-generated addresses */
     } ip6_addr_filter;
 #define ip6_addr ip6_addr_filter
 };
@@ -134,7 +113,7 @@ struct ip6_hdr {
 struct ip6_pseudo_hdr {
     ip6_addr_t src;
     ip6_addr_t dst;
-    uint32_t len; /* upper-layer packet length */
+    uint32_t len;       /* upper-layer packet length */
     uint8_t zero[3];
     uint8_t nxt;
 };
@@ -146,11 +125,9 @@ extern const ip6_addr_t IPV6_LOOPBACK_ADDR;
 extern const ip6_addr_t IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR;
 extern const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX;
 
-#define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 104
-#define IPV6_MULTICAST_ADDR_PREFIX_LEN 8
-#define IPV6_LINK_LOCAL_ADDR_PREFIX_LEN 64
-
-#define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 7)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy\0 */
+#define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN     104
+#define IPV6_MULTICAST_ADDR_PREFIX_LEN          8
+#define IPV6_LINK_LOCAL_ADDR_PREFIX_LEN         10
 
 struct ip6_endpoint {
     ip6_addr_t addr;
