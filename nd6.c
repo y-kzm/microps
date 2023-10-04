@@ -32,16 +32,17 @@ struct nd6_cache {
     int isrouter; /* typedef int bool */
     struct timeval timestamp;
     struct net_device *dev;
-    // dad timeout
+    time_t timeout;
 };
 
 static mutex_t mutex = MUTEX_INITIALIZER;
 static struct nd6_cache caches[ND6_CACHE_SIZE];
 
 /*
- * Neighbor Cache Dump
+ * Dump
  */
 
+#ifdef ND6CACHEDUMP
 static char *
 nd6_state_ntoa(uint8_t state) {
     switch (state) {
@@ -87,11 +88,70 @@ nd6_cache_dump(FILE *fp)
     fprintf(fp, "+---------------------------------------------------------------------------+\n");
     funlockfile(fp);
 }
+#endif
+
+static char *
+nd6_pi_flg_ntoa(uint8_t flg)
+{
+    static char str[9];
+
+    snprintf(str, sizeof(str), "%c%c%c*****",
+        ND6_RA_PI_FLG_ISSET(flg, ND6_RA_PI_FLG_LINK)  ? 'L'  : '-',
+        ND6_RA_PI_FLG_ISSET(flg, ND6_RA_PI_FLG_AUTO)  ? 'A'  : '-',
+        ND6_RA_PI_FLG_ISSET(flg, ND6_RA_PI_FLG_RTR)   ? 'R'  : '-');
+    return str;
+}
+
+void
+nd6_options_dump(const uint8_t *options, size_t len)
+{
+    struct nd_opt_hdr *opt;
+    size_t i = 0;
+    struct nd_opt_lladdr *opt_lladdr;
+    struct nd_opt_prefixinfo *opt_pi;
+    char lladdr[ETHER_ADDR_STR_LEN];
+    char addr[IPV6_ADDR_STR_LEN];
+
+    flockfile(stderr);
+    while (i <= len) {
+        opt = (struct nd_opt_hdr *)(options + i);
+        if (opt->len == 0) 
+            break;
+        if ((i + (opt->len * 8)) > len) 
+            break;
+        i += (opt->len * 8);
+        fprintf(stderr, "       type: %u\n", opt->type);
+        fprintf(stderr, "        len: %u (%u byte)\n", opt->len, opt->len * 8);
+        switch (opt->type) {
+        case ND_OPT_SOURCE_LINKADDR:
+        case ND_OPT_TARGET_LINKADDR:
+            opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
+            fprintf(stderr, "     lladdr: %s\n", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+            break;
+        case ND_OPT_PREFIX_INFORMATION:
+            opt_pi = (struct nd_opt_prefixinfo *)(opt + 1);
+            fprintf(stderr, "  prefixlen: %u\n", opt_pi->prefixlen);
+            fprintf(stderr, "      flags: 0x%02x (%s)\n", opt_pi->flg, nd6_pi_flg_ntoa(opt_pi->flg));
+            fprintf(stderr, " valid time: %u\n", ntoh32(opt_pi->valid_time)); 
+            fprintf(stderr, "prefer time: %u\n", ntoh32(opt_pi->preferred_time)); 
+            fprintf(stderr, "   reserved: %u\n", ntoh32(opt_pi->reserved2));
+            fprintf(stderr, "     prefix: %s\n", ip6_addr_ntop(opt_pi->prefix, addr, sizeof(addr))); 
+            break;
+        case ND_OPT_REDIRECTED_HEADER:
+        case ND_OPT_MTU:
+        default:
+            debugf("not supported");
+            break;
+        }
+#ifdef HEXDUMP
+        hexdump(stderr, options, len);
+#endif
+    }
+    funlockfile(stderr);
+}
 
 /*
  * Neighbor Cache
- *
- * NOTE: Neighbor Cache functions must be called after mutex locked
  */
 
 static int 
@@ -135,7 +195,7 @@ nd6_cache_alloc(int index)
         entry = &caches[offset];
     }
 
-    debugf("insert entry into caches[%d], hashindex=%d", offset, index);
+    debugf("ALLOC: caches[%d], hashindex=%d", offset, index);
     return entry;
 }
 
@@ -200,7 +260,8 @@ nd6_cache_insert(ip6_addr_t ip6addr, const uint8_t *lladdr, struct net_iface *if
         errorf("nd6_cache_alloc() failure");
         return NULL;
     }
-    cache->state = ND6_STATE_REACHABLE;
+    // ns,rs,raを受け取ってエントリを作成する場合はSTATE
+    cache->state = ND6_STATE_STALE;
     cache->ip6addr = ip6addr;
     memcpy(cache->lladdr, lladdr, ETHER_ADDR_LEN);
     gettimeofday(&cache->timestamp, NULL);
@@ -255,6 +316,7 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
         cache->state = ND6_STATE_INCOMPLETE;
         IPV6_ADDR_COPY(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
         gettimeofday(&cache->timestamp, NULL);
+        // 再送タイマー開始
         nd6_ns_output(iface, ip6addr);
         mutex_unlock(&mutex);
         debugf("cache not found, ip6addr=%s", ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)));
@@ -273,56 +335,8 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
 }
 
 /*
- * ND6 Options
+ * Options
  */
-
-void
-nd6_options_dump(const uint8_t *options, size_t len)
-{
-    struct nd_opt_hdr *opt;
-    size_t i = 0;
-    struct nd_opt_lladdr *opt_lladdr;
-    struct nd_opt_prefixinfo *opt_pi;
-    char lladdr[ETHER_ADDR_STR_LEN];
-    char addr[IPV6_ADDR_STR_LEN];
-
-    flockfile(stderr);
-    while (i <= len) {
-        opt = (struct nd_opt_hdr *)(options + i);
-        if (opt->len == 0) 
-            break;
-        if ((i + (opt->len * 8)) > len) 
-            break;
-        i += (opt->len * 8);
-        fprintf(stderr, "nd opt type: %u\n", opt->type);
-        fprintf(stderr, " nd opt len: %u (%u byte)\n", opt->len, opt->len * 8);
-        switch (opt->type) {
-        case ND_OPT_SOURCE_LINKADDR:
-        case ND_OPT_TARGET_LINKADDR:
-            opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
-            fprintf(stderr, "     lladdr: %s\n", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
-            break;
-        case ND_OPT_PREFIX_INFORMATION:
-            opt_pi = (struct nd_opt_prefixinfo *)(opt + 1);
-            fprintf(stderr, "  prefixlen: %u\n", opt_pi->prefixlen);
-            fprintf(stderr, "      flags: l=%u, a=%u, r=%u, reserved=%u\n", opt_pi->l, opt_pi->a, opt_pi->r, opt_pi->reserved);
-            fprintf(stderr, " valid time: %u\n", ntoh32(opt_pi->valid_time)); 
-            fprintf(stderr, "prefer time: %u\n", ntoh32(opt_pi->preferred_time)); 
-            fprintf(stderr, "   reserved: %u\n", ntoh32(opt_pi->reserved2));
-            fprintf(stderr, "     prefix: %s\n", ip6_addr_ntop(opt_pi->prefix, addr, sizeof(addr))); 
-            break;
-        case ND_OPT_REDIRECTED_HEADER:
-        case ND_OPT_MTU:
-        default:
-            debugf("not supported");
-            break;
-        }
-#ifdef HEXDUMP
-        hexdump(stderr, options, len);
-#endif
-    }
-    funlockfile(stderr);
-}
 
 void *
 nd6_options(const uint8_t *options, size_t len, uint8_t type)
@@ -346,10 +360,12 @@ nd6_options(const uint8_t *options, size_t len, uint8_t type)
 }
 
 /*
- * ND6 input/output
+ * Neighbor Discovery Protocol: input/output
  */
 
-// TODO: rs_inpout()
+/*
+ * Router Solicitation
+ */
 
 int
 nd6_rs_output(struct ip6_iface *iface)
@@ -362,7 +378,7 @@ nd6_rs_output(struct ip6_iface *iface)
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
-    /* router solicit */
+    /* router solicitation message */
     rs = (struct nd_router_solicit *)buf;
     rs->nd_ns_type = ICMPV6_TYPE_ROUTER_SOL;
     rs->nd_ns_code = 0;
@@ -389,6 +405,10 @@ nd6_rs_output(struct ip6_iface *iface)
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
 }
 
+/*
+ * Router Advertisement
+ */
+
 void
 nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
@@ -405,19 +425,25 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;             
     }
 
-    /* router advertisement */
+    /* router advertisement message */
     ra = (struct nd_router_adv *)data;
-    if (ra->m) {
+    if (ND6_RA_FLG_ISSET(ra->nd_ra_flg, ND6_RA_FLG_MGMT)) {
         debugf("use stateful DHCPv6 to configure addresses");
-        iface->slaac = 0;
+        iface->slaac.running = 0;
     }
-    if (ra->o) {
+    if (ND6_RA_FLG_ISSET(ra->nd_ra_flg, ND6_RA_FLG_OTHER)) {
         warnf("use stateful DHCPv6 to obtain non-address information");
-        // iface->slaac.dns = 0
+        iface->slaac.rdns = 0;
     }
 
-    /* options */
+    /* possible options */
+    /* source link-layer address */
     opt_lladdr = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_SOURCE_LINKADDR);
+    if (opt_lladdr == NULL) {
+        goto IN;
+    }
+    debugf("option: lladdr(src)=%s", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+    /* update neighbor cache */
     mutex_lock(&mutex);
     if (nd6_cache_update(src, opt_lladdr->lladdr)) {
         /* update */
@@ -433,25 +459,34 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         mutex_unlock(&mutex);
     }
 
+    /* prefix information */
     opt_pi = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_PREFIX_INFORMATION);
-    if (!opt_pi->l) {
+    if (opt_pi == NULL) {
+        goto IN;
+    }
+    if (!ND6_RA_PI_FLG_ISSET(opt_pi->flg, ND6_RA_PI_FLG_LINK)) {
         warnf("Advertised prefix is not On-link: This case is not yet supported");
-        iface->slaac = 0;
+        iface->slaac.running = 0;
     }
-    if (!opt_pi->a) {
+    if (!ND6_RA_PI_FLG_ISSET(opt_pi->flg, ND6_RA_PI_FLG_AUTO)) {
         warnf("Autonomous address-configuration is disabled");
-        iface->slaac = 0;
+        iface->slaac.running = 0;
     }
-    
-    debugf("%s => %s, type=(%u), len=%zu, lladdr(src)=%s",
+    // TODO: print prefix info
+
+IN:
+    debugf("%s => %s, type=(%u), len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        ra->nd_ra_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
-
-    if (iface->slaac) {
+        ra->nd_ra_type, len);
+    if (iface->slaac.running) {
         slaac_ra_input(data, len, src, dst, iface);
     }
 }
+
+/*
+ * Neighbor Solicitation
+ */
 
 void
 nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
@@ -469,45 +504,38 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;             
     }
 
-    /* neighbor solicit */
+    /* neighbor solicit message */
     ns = (struct nd_neighbor_solicit *)data;
     if (!IPV6_ADDR_EQUAL(&dst, &iface->ip6_addr.addr)) {
         if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) != 0) {
-            errorf("bad dstination addr");
+            errorf("bad dstination addr: %s", ip6_addr_ntop(dst, addr1, sizeof(addr1)));
             return;
         }
     }
-
     if (IPV6_ADDR_IS_UNSPECIFIED(&src)) {
-        /* solicited node multicast address */
+        // TODO: 
     }
-
     if (IPV6_ADDR_IS_MULTICAST(&ns->target)) {
-        errorf("bad target addr");
+        errorf("bad target addr: %s", ip6_addr_ntop(ns->target, addr1, sizeof(addr1)));
+        return;
+    }
+    if (IPV6_ADDR_IS_MULTICAST(&dst)) {
+        // TODO: 
+    }
+    if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &src)) {
+        errorf("duplicate ipv6 address: %s", ip6_addr_ntop(src, addr1, sizeof(addr1)));
         return;
     }
 
-    /* options */
+    /* possible options */
+    /* source link-layer address */
     opt = (struct nd_opt_hdr *)(data + sizeof(*ns));
     opt_lladdr = nd6_options((uint8_t *)(ns + 1), len - sizeof(*ns), ND_OPT_SOURCE_LINKADDR);
-
-    if (IPV6_ADDR_IS_MULTICAST(&dst)) {
-        /**
-         * 1. 受信インターフェイスの有効なユニキャスト/エニーキャストアドレス
-         * 2. DADが実行されている「暫定」アドレス
-         */
+    if (opt_lladdr != NULL) {
+        goto OUT;
     }
-
-    if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &src)) {
-        errorf("duplicate ipv6 address");
-        return;
-    }
-
-    debugf("%s => %s, type=(%u), len=%zu target=%s",
-        ip6_addr_ntop(src, addr1, sizeof(addr1)),
-        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        ns->nd_ns_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
-
+    debugf("option: lladdr=%s", ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
+    /* update neighbor cache */
     mutex_lock(&mutex);
     if (nd6_cache_update(src, opt_lladdr->lladdr)) {
         /* update */
@@ -523,10 +551,14 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         mutex_unlock(&mutex);
     }
 
-    if (ns->hdr.icmp6_type == ICMPV6_TYPE_NEIGHBOR_SOL) {
-        uint32_t flags = 0;
-        nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->ip6_addr.addr, src, ns->target, NET_IFACE(iface)->dev->addr);
-    }
+OUT:
+    debugf("%s => %s, type=(%u), len=%zu ",
+        ip6_addr_ntop(src, addr1, sizeof(addr1)),
+        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
+        ns->nd_ns_type, len);
+    
+    uint32_t flags = 0x40000000;
+    nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->ip6_addr.addr, src, ns->target, NET_IFACE(iface)->dev->addr);
 }
 
 int
@@ -542,7 +574,7 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
-    /* neighbor solicit */
+    /* neighbor solicitation message */
     ns = (struct nd_neighbor_solicit *)buf;
     ns->nd_ns_type = ICMPV6_TYPE_NEIGHBOR_SOL;
     ns->nd_ns_code = 0;
@@ -550,7 +582,8 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     ns->nd_ns_reserved = 0;
     ns->target = target;
 
-    /* options */
+    /* possible options */
+    /* source link-layer address */
     opt = (struct nd_opt_hdr *)(ns + 1);
     opt->type = ND_OPT_SOURCE_LINKADDR;
     opt->len = 1;
@@ -560,7 +593,7 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
 
     /* calculate the checksum */
     pseudo.src = iface->ip6_addr.addr;
-    ip6_solicited_node_mcaddr(target, &pseudo.dst);
+    ip6_addr_create_solicit_mcastaddr(target, &pseudo.dst);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = IPV6_NEXT_ICMPV6;
@@ -577,6 +610,10 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     return ip6_output(IPV6_NEXT_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
 }
 
+/*
+ * Neighbor Advertisement
+ */
+
 void
 nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
@@ -591,11 +628,20 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         return;             
     }
 
-    /* neighbor avertisement */
+    /* neighbor avertisement message */
     na = (struct nd_neighbor_adv *)data;
+    if (IPV6_ADDR_IS_MULTICAST(&na->target)) {
+        errorf("bad target addr: %s", ip6_addr_ntop(na->target, addr1, sizeof(addr1)));
+        return;
+    }
 
-    /* options */
+    /* possible options */
+    /* target link-layer address */
     opt_lladdr = nd6_options((uint8_t *)(na + 1), len - sizeof(*na), ND_OPT_TARGET_LINKADDR);
+    if (opt_lladdr == NULL) {
+        warnf("Link-layer Address opson is empty");
+        return;
+    }
     if (IPV6_ADDR_IS_MULTICAST(&na->target)) {
         errorf("bad target addr");
         return;
@@ -607,13 +653,9 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         }
     }
 
-    // TODO: DAD nd6_dad_input()
+    // TODO: nd6_dad_input()
 
-    debugf("%s => %s, type=(%u), len=%zu target=%s",
-        ip6_addr_ntop(src, addr1, sizeof(addr1)),
-        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
-        na->nd_ns_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
-
+    /* update neighbor cache */
     mutex_lock(&mutex);
     if (nd6_cache_update(src, opt_lladdr->lladdr)) {
 #ifdef CACHEDUMP
@@ -621,6 +663,12 @@ nd6_na_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
 #endif
     }
     mutex_unlock(&mutex);
+
+
+    debugf("%s => %s, type=(%u), len=%zu target=%s",
+        ip6_addr_ntop(src, addr1, sizeof(addr1)),
+        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
+        na->nd_na_type, len, ether_addr_ntop(opt_lladdr->lladdr, lladdr, sizeof(lladdr)));
 }
 
 int
@@ -646,23 +694,23 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
         memcpy((uint8_t *)lladdr, NET_IFACE(res)->dev->addr, ETHER_ADDR_LEN);
     } else {
         warnf("no appropriate source address");
+        return -1;
     }
 
-    /* neighbor advertisement */
+    /* neighbor advertisement message */
     na = (struct nd_neighbor_adv *)buf;
     na->nd_na_type = ICMPV6_TYPE_NEIGHBOR_ADV;
     na->nd_na_code = 0;
     na->nd_na_sum = 0;
-    na->nd_na_reserved = 0;
+    na->nd_na_flg = hton32(flags);
     na->target = target;
 
-    /* options */
+    /* possible options */
     opt = (struct nd_opt_hdr *)(na + 1);
     opt->type = ND_OPT_TARGET_LINKADDR;
     opt->len = 1;
     opt_lladdr = (struct nd_opt_lladdr *)(opt + 1);
     memcpy(opt_lladdr->lladdr, lladdr, ETHER_ADDR_LEN);
-
     msg_len = sizeof(*na) + sizeof(*opt) + sizeof(*opt_lladdr); 
     memcpy(buf + msg_len, data, len);
 
@@ -673,7 +721,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = IPV6_NEXT_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
-    na->nd_ns_sum = cksum16((uint16_t *)buf, msg_len, psum);
+    na->nd_na_sum = cksum16((uint16_t *)buf, msg_len, psum);
 
     debugf("%s => %s, type=(%u), len=%zu, +msg_len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),

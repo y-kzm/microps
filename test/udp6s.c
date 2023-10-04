@@ -1,21 +1,23 @@
 #include <stdio.h>
-#include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <signal.h>
-#include <sys/types.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <errno.h>
 
 #include "util.h"
 #include "net.h"
+#include "ip.h"
 #include "ip6.h"
-#include "icmp6.h"
 #include "udp.h"
+#include "sock.h"
 
 #include "driver/loopback.h"
 #include "driver/ether_tap.h"
 
-#include "test.h"
+#include "test/test.h"
 
 static volatile sig_atomic_t terminate;
 
@@ -70,6 +72,10 @@ setup(void)
         errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
+    if ((ip6_iface_init(dev)) == NULL){
+        errorf("ip6_iface_init() failure");
+        return -1;
+    }
     if (net_run() == -1) {
         errorf("net_run() failure");
         return -1;
@@ -77,55 +83,79 @@ setup(void)
     return 0;
 }
 
-static void
-cleanup(void)
-{
-    net_shutdown();
-}
-
 int
 main(int argc, char *argv[])
 {
     int soc;
-    struct ip6_endpoint local, foreign;
+    long int port;
+    struct sockaddr_in6 local = { .sin6_family=AF_INET6 }, foreign;
+    int foreignlen;
     uint8_t buf[1024];
+    char addr[SOCKADDR_IN6_STR_LEN];
     ssize_t ret;
-    char ep[IPV6_ENDPOINT_STR_LEN];
 
+    /*
+     * Parse command line parameters
+     */
+    switch (argc) {
+    case 3:
+        if (ip6_addr_pton(argv[argc-2], &local.sin6_addr) == -1) {
+            errorf("ip6_addr_pton() failure, addr=%s", optarg);
+            return -1;
+        }
+        /* fall through */
+    case 2:
+        port = strtol(argv[argc-1], NULL, 10);
+        if (port < 0 || port > UINT16_MAX) {
+            errorf("invalid port, port=%s", optarg);
+            return -1;
+        }
+        local.sin6_port = hton16(port);
+        break;
+    default:
+        fprintf(stderr, "Usage: %s [addr] port\n", argv[0]);
+        return -1;
+    }
+    /*
+     * Setup protocol stack
+     */
     if (setup() == -1) {
         errorf("setup() failure");
         return -1;
     }
-    soc = udp6_open();
+    /*
+     *  Application Code
+     */
+    soc = sock_open(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (soc == -1) {
-        errorf("udp6_open() failure");
+        errorf("sock_open() failure");
         return -1;
     }
-    ip6_endpoint_pton("[::]7", &local);
-    if (udp6_bind(soc, &local) == -1) {
-        errorf("udp6_bind() failure");
-        udp6_close(soc);
+    if (sock_bind(soc, (struct sockaddr *)&local, sizeof(local)) == -1) {
+        errorf("sock_bind() failure");
         return -1;
     }
-    debugf("waiting for data...");
     while (!terminate) {
-        ret = udp6_recvfrom(soc, buf, sizeof(buf), &foreign);
+        foreignlen = sizeof(foreignlen);
+        ret = sock_recvfrom(soc, buf, sizeof(buf), (struct sockaddr *)&foreign, &foreignlen);
         if (ret == -1) {
             if (errno == EINTR) {
                 continue;
             }
-            errorf("udp6_recvfrom() failure");
+            errorf("sock_recvfrom() failure");
             break;
         }
-        debugf("%zd bytes data form %s", ret, ip6_endpoint_ntop(&foreign, ep, sizeof(ep)));
+        infof("%zu bytes data form %s", ret, sockaddr_ntop((struct sockaddr *)&foreign, addr, sizeof(addr)));
         hexdump(stderr, buf, ret);
-        if (udp6_sendto(soc, buf, ret, &foreign) == -1) {
-            errorf("udp6_sendto() failure");
+        if (sock_sendto(soc, buf, ret, (struct sockaddr *)&foreign, foreignlen) == -1) {
+            errorf("sock_sendto() failure");
             break;
         }
     }
-    udp6_close(soc);
-    cleanup();
+    udp_close(soc);
+    /*
+     * Cleanup protocol stack
+     */
+    net_shutdown();
     return 0;
-
 }

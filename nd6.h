@@ -20,26 +20,20 @@ struct nd_router_solicit {
 #define nd_rs_reserved	hdr.icmp6_flag_reserved
 };
 
+#define ND6_RA_FLG_ISSET(x, y) ((x & 0xfc) & (y) ? 1 : 0)
+
+#define ND6_RA_FLG_MGMT     0x80  // Management address configuration
+#define ND6_RA_FLG_OTHER    0x40  // Other configuration
+#define ND6_RA_FLG_HOME     0x20  // Home agent
+#define ND6_RA_FLG_PRF      0x18  // Default router preference
+#define ND6_RA_FLG_PROXY    0x04  // Proxy 
+
 struct nd_router_adv {
     uint8_t	nd_ra_type;
 	uint8_t	nd_ra_code;	    
 	uint16_t nd_ra_sum;	
     uint8_t cur_hlim;
-#if defined(_CPU_BIG_ENDIAN)
-    uint8_t m   : 1;
-    uint8_t o   : 1;
-    uint8_t h   : 1;
-    uint8_t prf : 2;
-    uint8_t p   : 1;  
-    uint8_t reserved : 2;
-#else
-    uint8_t reserved : 2;
-    uint8_t p   : 1; // Proxy 
-    uint8_t prf : 2; // Default router preference
-    uint8_t h   : 1; // Home agent
-    uint8_t o   : 1; // Other configuration
-    uint8_t m   : 1; // Management address configuration
-#endif
+    uint8_t nd_ra_flg;
     uint16_t lifetime;        // router life time
     uint32_t reachable_time;  // reachable time
     uint32_t retransmit_time; // retransmit time
@@ -56,22 +50,21 @@ struct nd_neighbor_solicit {
 #define nd_ns_reserved	hdr.icmp6_flag_reserved
 };
 
+#define ND6_NA_FLG_ISSET(x, y) ((x & 0xe0000000) & (y) ? 1 : 0)
+
+#define ND6_NA_FLAG_ROUTER		0x80000000
+#define ND6_NA_FLAG_SOLICITED	0x40000000
+#define ND6_NA_FLAG_OVERRIDE	0x20000000
+
 struct nd_neighbor_adv {
-    struct icmp6_hdr hdr;
+    uint8_t	nd_na_type;
+	uint8_t	nd_na_code;	    
+	uint16_t nd_na_sum;	
+    uint32_t nd_na_flg;
     ip6_addr_t target;
     /* options follow. */
-#define nd_na_type		hdr.icmp6_type
-#define nd_na_code		hdr.icmp6_code
-#define nd_na_sum		hdr.icmp6_sum
-#define nd_na_reserved	hdr.icmp6_flag_reserved
 };
 
-// TODO: 定義だけ
-#define ND_NA_FLAG_ROUTER		0x80000000
-#define ND_NA_FLAG_SOLICITED	0x40000000
-#define ND_NA_FLAG_OVERRIDE		0x20000000
-
-/* not used */
 struct nd_opt_hdr {
 	u_int8_t type;
 	u_int8_t len;
@@ -89,19 +82,15 @@ struct nd_opt_lladdr {
     uint8_t lladdr[ETHER_ADDR_LEN];
 };
 
+#define ND6_RA_PI_FLG_ISSET(x, y) ((x & 0xe0) & (y) ? 1 : 0)
+
+#define ND6_RA_PI_FLG_LINK 0x80
+#define ND6_RA_PI_FLG_AUTO 0x40
+#define ND6_RA_PI_FLG_RTR  0x20
+
 struct nd_opt_prefixinfo {
     uint8_t prefixlen;
-#if defined(_CPU_BIG_ENDIAN)
-    uint8_t l : 1;
-    uint8_t a : 1;
-    uint8_t r : 1;
-    uint8_t reserved : 5;
-#else
-    uint8_t reserved : 5;
-    uint8_t r : 1; // Router address
-    uint8_t a : 1; // Autonomous address-configuration
-    uint8_t l : 1; // On-link
-#endif 
+    uint8_t flg;
     uint32_t valid_time;
     uint32_t preferred_time;
 	uint32_t reserved2;
@@ -109,11 +98,11 @@ struct nd_opt_prefixinfo {
 } __attribute__((__packed__));
 
 struct nd_opt_redirect {
-    // TODO: 
+    // TODO: not supported
 };
 
 struct nd_opt_mtu {
-    // TODO: 
+    // TODO: not supported
 };
 
 extern int

@@ -178,43 +178,6 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size)
     return p;
 }
 
-/* Note: only the following format supported: [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy */
-int
-ip6_endpoint_pton(const char *p, struct ip6_endpoint *n)
-{
-    char *sep1, *sep2;
-    char addr[IPV6_ADDR_STR_LEN] = {};
-    long int port;
-
-    sep1 = strchr(p, '[');
-    if (!sep1 || sep1 - p != 0) {
-        return -1;
-    }
-    sep2 = strchr(p, ']');
-    if (!sep2) {
-        return -1;
-    }
-    memcpy(addr, p + 1, sep2 - sep1);
-    if (ip6_addr_pton(addr, &n->addr) == -1) {
-        return -1;
-    }
-    port = strtol(sep2+1, NULL, 10);
-    if (port <= 0 || port > UINT16_MAX) {
-        return -1;
-    }
-    n->port = hton16(port);
-    return 0;
-}
-
-char *
-ip6_endpoint_ntop(const struct ip6_endpoint *n, char *p, size_t size)
-{
-    char addr[IPV6_ADDR_STR_LEN];
-
-    snprintf(p, IPV6_ENDPOINT_STR_LEN, "[%s]%d", ip6_addr_ntop(n->addr, addr, size), ntoh16(n->port));
-    return p;
-}
-
 /*
  * Dumnp
  */
@@ -270,25 +233,9 @@ ip6_fib_dump()
  * Address-related
  */
 
-void 
-ip6_solicited_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr)
-{
-    char addr[IPV6_ADDR_STR_LEN];
-
-    if (IPV6_ADDR_IS_MULTICAST(&ip6addr)) {
-        errorf("%s is not unicast address", ip6_addr_ntop(ip6addr, addr, sizeof(addr)));
-        return;
-    }
-    IPV6_ADDR_COPY(solicited_node_mcaddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / __CHAR_BIT__);
-
-    solicited_node_mcaddr->addr8[13] = ip6addr.addr8[13];
-    solicited_node_mcaddr->addr8[14] = ip6addr.addr8[14];
-    solicited_node_mcaddr->addr8[15] = ip6addr.addr8[15];
-}
-
 /* Brief: generate multicast addr from mac addr by UEI-64 */
 static void
-ip6_mcaddr2mac(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
+ip6_addr_mcastaddr_to_hwaddr(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
 {
     char addr[IPV6_ADDR_STR_LEN];
 
@@ -305,24 +252,25 @@ ip6_mcaddr2mac(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
     hwaddr[5] = ip6mcaddr.addr8[15];
 }
 
-/* Brief: eui-64 addr to link local addr */
-void
-ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr)
+void 
+ip6_addr_create_solicit_mcastaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr)
 {
-    ip6addr->addr16[0] = hton16(0xfe80);
-    ip6addr->addr16[1] = hton16(0x0000);
-    ip6addr->addr16[2] = hton16(0x0000);
-    ip6addr->addr16[3] = hton16(0x0000);
+    char addr[IPV6_ADDR_STR_LEN];
 
-    ip6addr->addr16[4] = eui64[0];
-    ip6addr->addr16[5] = eui64[1];
-    ip6addr->addr16[6] = eui64[2];
-    ip6addr->addr16[7] = eui64[3];
+    if (IPV6_ADDR_IS_MULTICAST(&ip6addr)) {
+        errorf("%s is not unicast address", ip6_addr_ntop(ip6addr, addr, sizeof(addr)));
+        return;
+    }
+    IPV6_ADDR_COPY(solicited_node_mcaddr, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / __CHAR_BIT__);
+
+    solicited_node_mcaddr->addr8[13] = ip6addr.addr8[13];
+    solicited_node_mcaddr->addr8[14] = ip6addr.addr8[14];
+    solicited_node_mcaddr->addr8[15] = ip6addr.addr8[15];
 }
 
 /* Brief: eui-64 addr to global addr */
 void
-ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
+ip6_addr_create_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
 {
     ip6addr->addr16[0] = prefix.addr16[0];
     ip6addr->addr16[1] = prefix.addr16[1];
@@ -335,9 +283,28 @@ ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uin
     ip6addr->addr16[7] = eui64[3];
 }
 
+/* Brief: hwaddr to eui-64 addr to link local addr */
+static void
+ip6_addr_create_linklocal(const uint8_t *hwaddr, ip6_addr_t *ip6addr)
+{
+    uint8_t eui64[ETHER_EUI64_ID_LEN];
+
+    ether_addr_create_eui64(hwaddr, eui64);
+
+    ip6addr->addr16[0] = hton16(0xfe80);
+    ip6addr->addr16[1] = hton16(0x0000);
+    ip6addr->addr16[2] = hton16(0x0000);
+    ip6addr->addr16[3] = hton16(0x0000);
+
+    ip6addr->addr16[4] = eui64[0];
+    ip6addr->addr16[5] = eui64[1];
+    ip6addr->addr16[6] = eui64[2];
+    ip6addr->addr16[7] = eui64[3];
+}
+
 /* Brief: prefix length to netmask */
 static ip6_addr_t *
-ip6_prefixlen2netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
+ip6_addr_prefixlen_to_netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
 {
     int i;
 
@@ -349,8 +316,17 @@ ip6_prefixlen2netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
     return netmask;
 }
 
+static uint8_t
+ip6_addr_netmask_to_prefixlen(ip6_addr_t netmask) {
+    uint8_t prefixlen = 64;
+
+    // TODO: 
+
+    return prefixlen;
+}
+
 static uint32_t 
-ip6_get_addr_scope(const ip6_addr_t *ip6addr)
+ip6_addr_get_scope(const ip6_addr_t *ip6addr)
 {
     if (IPV6_ADDR_IS_MULTICAST(ip6addr)) {
         return IPV6_ADDR_MC_SCOPE(ip6addr);
@@ -373,7 +349,7 @@ struct ip6_iface *
 ip6_rule_addr_select(const ip6_addr_t dst)
 {
     struct ip6_iface *res, *entry;
-    uint32_t scope = ip6_get_addr_scope(&dst);
+    uint32_t scope = ip6_addr_get_scope(&dst);
 
     // Rule1: Prefer same address
     res = ip6_iface_select(dst);
@@ -381,9 +357,9 @@ ip6_rule_addr_select(const ip6_addr_t dst)
         return res;
 
     // Rule2: Prefer appropriate scope
-    // 宛先アドレスのスコープより大きいスコープを持つ（到達可能性がある）アドレスの中でもっともスコープが小さいものを選択する
+    // MEMO: 宛先アドレスのスコープより大きいスコープを持つ（到達可能性がある）アドレスの中でもっともスコープが小さいものを選択する
     for (entry = ifaces; entry; entry = entry->next) {
-        if (ip6_get_addr_scope(&dst) <= entry->ip6_addr.scope) {
+        if (ip6_addr_get_scope(&dst) <= entry->ip6_addr.scope) {
             if (entry->ip6_addr.scope <= scope)
                 res = entry;
             scope = entry->ip6_addr.scope;
@@ -418,7 +394,6 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
 {
     struct ip6_route *route;
     char addr1[IPV6_ADDR_STR_LEN];
-    char addr2[IPV6_ADDR_STR_LEN];
     char addr3[IPV6_ADDR_STR_LEN];
     char addr4[IPV6_ADDR_STR_LEN];
 
@@ -428,7 +403,7 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
         return NULL;
     }
 
-    /*
+    /* MEMO: 
     if (ip6_route_lookup(network) != NULL) {
         debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
         return NULL;
@@ -441,9 +416,9 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
     route->iface = iface;
     route->next = routes;
     routes = route;
-    infof("network=%s, netmask=%s, nexthop=%s, iface=%s dev=%s",
+    infof("network=%s, prefixlen=%d, nexthop=%s, iface=%s dev=%s",
         ip6_addr_ntop(route->network, addr1, sizeof(addr1)),
-        ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
+        ip6_addr_netmask_to_prefixlen(route->netmask),
         ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)),
         ip6_addr_ntop(route->iface->ip6_addr.addr, addr4, sizeof(addr4)),
         NET_IFACE(iface)->dev->name
@@ -473,8 +448,9 @@ ip6_route_set_multicast(struct ip6_iface *iface)
 {
     ip6_addr_t mask;
 
-    ip6_prefixlen2netmask(IPV6_MULTICAST_ADDR_PREFIX_LEN, &mask);
+    ip6_addr_prefixlen_to_netmask(IPV6_MULTICAST_ADDR_PREFIX_LEN, &mask);
     
+    // MEMO: 全ノードマルチキャスト，Solicited-Nodeマルチキャストに参加
     IPV6_ADDR_MASK(&IPV6_MULTICAST_ADDR_PREFIX, &mask, &mask); 
     if (!ip6_route_add(IPV6_MULTICAST_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface)) {
         errorf("ip6_route_add() failure");
@@ -500,7 +476,7 @@ ip6_route_get_iface(ip6_addr_t dst)
  */
 
 struct ip6_iface *
-ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac)
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int enable)
 {
     struct ip6_iface *iface;
 
@@ -516,9 +492,9 @@ ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac)
         return NULL;
     }
     iface->ip6_addr.prefixlen = prefixlen;
-    ip6_prefixlen2netmask(prefixlen, &iface->ip6_addr.netmask);
-    iface->ip6_addr.scope = ip6_get_addr_scope(&iface->ip6_addr.addr);
-    iface->slaac = slaac;
+    ip6_addr_prefixlen_to_netmask(prefixlen, &iface->ip6_addr.netmask);
+    iface->ip6_addr.scope = ip6_addr_get_scope(&iface->ip6_addr.addr);
+    iface->slaac.running = enable;
 
     return iface;
 }
@@ -562,13 +538,31 @@ ip6_iface_select(ip6_addr_t addr)
 }
 
 /*
- * IPv6 I/O
+ * IPv6: input/output
  */
 
 static void
 ip6_input_hbh()
 {
-    debugf("--------------------- called ip6_input_hbh(): Hop-by-Hop ---------------------");
+    debugf("----------- called ip6_input_hbh(): Hop-by-Hop -----------");
+}
+
+static void
+route6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("-----------  called route6_input(): Routing -----------");
+}
+
+static void
+frag6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("----------- called frag6_input(): Fragment -----------");
+}
+
+static void
+dest6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+{
+    debugf("----------- called dest6_input(): Destination -----------");
 }
 
 static void
@@ -623,7 +617,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
     if (!iface) {
         /* iface is not registered to the device */
-        // goto forwarding ?
+        // TODO: goto forwarding 
         return;
     }    
 
@@ -646,24 +640,6 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
 }
 
-static void
-route6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
-{
-    debugf("---------------------  called route6_input(): Routing ---------------------");
-}
-
-static void
-frag6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
-{
-    debugf("--------------------- called frag6_input(): Fragment ---------------------");
-}
-
-static void
-dest6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
-{
-    debugf("--------------------- called dest6_input(): Destination ---------------------");
-}
-
 static int
 ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
 {
@@ -672,9 +648,10 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
 
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_RESOLVE) {
         if (IPV6_ADDR_IS_MULTICAST(&dst)) {
-            ip6_mcaddr2mac(dst, hwaddr);
+            ip6_addr_mcastaddr_to_hwaddr(dst, hwaddr);
         } else {
             ret = nd6_resolve(iface, dst, hwaddr);
+            // MEMO: 解決できなかったときにdataをキューで保持
             if (ret != 1) {
                 return ret;
             }
@@ -735,9 +712,9 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
         return -1;
     }
     // マルチキャスト宛のときは置き換えない
-    if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
-        iface = route->iface;
-    }
+    //if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
+    //    iface = route->iface;
+    //}
     if (!IPV6_ADDR_EQUAL(&src, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_EQUAL(&src, &iface->ip6_addr.addr)) {
         errorf("unable to output with specified source address, addr=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
         return -1;
@@ -783,6 +760,30 @@ ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint
     protocols = entry;
     infof("registered, type=%s(0x%02x)", entry->name, entry->type);
     return 0;    
+}
+
+/* IPv6 Link-Loca Address iface: Initial Register*/
+struct ip6_iface *
+ip6_iface_init(struct net_device *dev)
+{
+    struct ip6_iface *iface;
+    ip6_addr_t ip6addr;
+    char addr[IPV6_ADDR_STR_LEN];
+
+    ip6_addr_create_linklocal(dev->addr, &ip6addr);
+    iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), IPV6_LINK_LOCAL_ADDR_PREFIX_LEN, 1);
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
+        return NULL;
+    }
+    if (ip6_route_set_multicast(iface) != 0) {
+        errorf("ip6_route_set_multicast() failure");
+        return NULL;
+    }
+    // MEMO: 自主的なNAの送信
+
+    debugf("created Link-Local Address %s on interface %s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), dev->name);
+    return iface;
 }
 
 int

@@ -10,23 +10,22 @@
 #include "ip6.h"
 #include "nd6.h"
 
+/*
+ * Utils
+ */
+
 static void
-slaac_generate_linklocaladdr(const uint8_t *hwaddr, ip6_addr_t *ip6addr)
+slaac_addr_create_globaladdr(const uint8_t *hwaddr, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
 {
     uint8_t eui64[ETHER_EUI64_ID_LEN];
 
-    ether_addr_eui64(hwaddr, eui64);
-    ip6_generate_linklocaladdr(eui64, ip6addr);
+    ether_addr_create_eui64(hwaddr, eui64);
+    ip6_addr_create_globaladdr(eui64, prefix, prefixlen, ip6addr);
 }
 
-static void
-slaac_generate_globaladdr(const uint8_t *hwaddr, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
-{
-    uint8_t eui64[ETHER_EUI64_ID_LEN];
-
-    ether_addr_eui64(hwaddr, eui64);
-    ip6_generate_globaladdr(eui64, prefix, prefixlen, ip6addr);
-}
+/*
+ * SLAAC: input/output
+ */
 
 void
 slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
@@ -41,7 +40,7 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
     ra = (struct nd_router_adv *)data;
     opt_pi = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_PREFIX_INFORMATION);
 
-    slaac_generate_globaladdr(iface->iface.dev->addr, opt_pi->prefix, opt_pi->prefixlen, &ip6addr);
+    slaac_addr_create_globaladdr(iface->iface.dev->addr, opt_pi->prefix, opt_pi->prefixlen, &ip6addr);
     slaac_iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), opt_pi->prefixlen, 0);
     if (ip6_iface_register(iface->iface.dev, slaac_iface) == -1) {
         errorf("ip6_iface_register() failure");
@@ -54,42 +53,28 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
         errorf("ip6_route_set_multicast() failure");
         return;
     }
-
     if (ip6_route_set_default_gateway(slaac_iface, ip6_addr_ntop(src, addr, sizeof(addr))) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
         return;
     }
 
-    iface->slaac = 0;
+    /* done */
+    iface->slaac.running = 0;
 }
 
-static struct ip6_iface *
-slaac_rs_output(struct net_device *dev)
-{
-    struct ip6_iface *iface;
-    ip6_addr_t ip6addr;
-    char addr[IPV6_ADDR_STR_LEN];
-
-    slaac_generate_linklocaladdr(dev->addr, &ip6addr);
-    iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), IPV6_LINK_LOCAL_ADDR_PREFIX_LEN, 1);
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
-        return NULL;
-    }
-
-    if (ip6_route_set_multicast(iface) != 0) {
-        errorf("ip6_route_set_multicast() failure");
-        return NULL;
-    }
-
-    nd6_rs_output(iface);
-
-    return iface;
+static int
+slaac_rs_output(struct ip6_iface *iface) {
+    return nd6_rs_output(iface);
 }
 
-struct ip6_iface *
-slaac_run(struct net_device *dev)
+/*
+ * Misc
+ */ 
+
+int
+slaac_run(struct ip6_iface *iface)
 {
-    return slaac_rs_output(dev);
+    infof("start SLAAC");
+    return slaac_rs_output(iface);
 }
 

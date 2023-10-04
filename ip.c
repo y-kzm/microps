@@ -9,6 +9,7 @@
 #include "net.h"
 #include "arp.h"
 #include "ip.h"
+#include "sock.h"
 
 struct ip_protocol {
     struct ip_protocol *next;
@@ -83,25 +84,54 @@ ip_addr_ntop(const ip_addr_t n, char *p, size_t size)
 }
 
 int
-ip_endpoint_pton(const char *p, struct ip_endpoint *n)
+ip_endpoint_pton(unsigned short family, const char *p, struct ip_endpoint *n)
 {
-    char *sep;
-    char addr[IP_ADDR_STR_LEN] = {};
+    char *sep1, *sep2;
+    char addr1[IP_ADDR_STR_LEN] = {};
+    char addr2[IPV6_ADDR_STR_LEN] = {};
     long int port;
 
-    sep = strrchr(p, ':');
-    if (!sep) {
+    switch (family) {
+    case AF_INET:
+        sep1 = strrchr(p, ':');
+        if (!sep1) {
+            return -1;
+        }
+        memcpy(addr1, p, sep1 - p);
+        if (ip_addr_pton(addr1, &n->addr.s_addr4) == -1) {
+            return -1;
+        }
+        port = strtol(sep1 + 1, NULL, 10);
+        if (port <= 0 || port > UINT16_MAX) {
+            return -1;
+        }
+        n->port = hton16(port);
+        n->addr.family = AF_INET;
+        break;
+    case AF_INET6: /* Note: only the following format supported [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]:yyyyy */
+        sep1 = strchr(p, '[');
+        if (!sep1 || sep1 - p != 0) {
+            return -1;
+        }
+        sep2 = strchr(p, ']');
+        if (!sep2) {
+            return -1;
+        }
+        memcpy(addr2, p + 1, sep2 - sep1);
+        if (ip6_addr_pton(addr2, &n->addr.s_addr6) == -1) {
+            return -1;
+        }
+        port = strtol(sep2 + 2 , NULL, 10);
+        if (port <= 0 || port > UINT16_MAX) {
+            return -1;
+        }
+        n->port = hton16(port);
+        n->addr.family = AF_INET6;
+        break;
+    default:
+        errorf("not supported address family");
         return -1;
     }
-    memcpy(addr, p, sep - p);
-    if (ip_addr_pton(addr, &n->addr) == -1) {
-        return -1;
-    }
-    port = strtol(sep+1, NULL, 10);
-    if (port <= 0 || port > UINT16_MAX) {
-        return -1;
-    }
-    n->port = hton16(port);
     return 0;
 }
 
@@ -109,10 +139,21 @@ char *
 ip_endpoint_ntop(const struct ip_endpoint *n, char *p, size_t size)
 {
     size_t offset;
+    char addr[IPV6_ADDR_STR_LEN] = {};
 
-    ip_addr_ntop(n->addr, p, size);
-    offset = strlen(p);
-    snprintf(p + offset, size - offset, ":%d", ntoh16(n->port));
+    switch (n->addr.family) {
+    case AF_INET:
+        ip_addr_ntop(n->addr.s_addr4, p, size);
+        offset = strlen(p);
+        snprintf(p + offset, size - offset, ":%d", ntoh16(n->port));
+        break;
+    case AF_INET6:
+        snprintf(p, IPV6_ENDPOINT_STR_LEN, "[%s]:%d", ip6_addr_ntop(n->addr.s_addr6, addr, size), ntoh16(n->port));
+        break;
+    default:
+        errorf("not supported address family: %d", n->addr.family);
+        return NULL;
+    }
     return p;
 }
 
@@ -338,7 +379,9 @@ ip_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
     debugf("dev=%s, iface=%s, protocol=%s(0x%02x), len=%u",
         dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), ip_protocol_name(hdr->protocol), hdr->protocol, total);
+#ifdef HDRDUMP
     ip_dump(data, total);
+#endif
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->protocol) {
             proto->handler((uint8_t *)hdr + hlen, total - hlen, hdr->src, hdr->dst, iface);
@@ -392,7 +435,9 @@ ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, si
     memcpy(hdr+1, data, len);
     debugf("dev=%s, iface=%s, protocol=%s(0x%02x), len=%u",
         NET_IFACE(iface)->dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), ip_protocol_name(protocol), protocol, total);
+#ifdef HDRDUMP
     ip_dump(buf, total);
+#endif
     return ip_output_device(iface, buf, total, nexthop);
 }
 

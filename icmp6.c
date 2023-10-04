@@ -40,27 +40,31 @@ icmp6_type_ntoa(uint8_t type) {
     return "Unknown";
 }
 
-/*
 static char *
 icmp6_ra_flg_ntoa(uint8_t flg)
 {
-#define ND6_RA_FLAG_ISSET(x, y) ((x & 0x3f) & (y) ? 1 : 0)
-#define ND6_RA_FLAG_MGMT 0x01
-#define ND6_RA_FLAG_OTHER 0x02
-#define ND6_RA_FLAG_HOME 0x04
-
     static char str[9];
 
-    snprintf(str, sizeof(str), "--%c%c%c%c%c%c",
-        TCP_FLG_ISSET(flg, TCP_FLG_URG) ? 'U' : '-',
-        TCP_FLG_ISSET(flg, TCP_FLG_ACK) ? 'A' : '-',
-        TCP_FLG_ISSET(flg, TCP_FLG_PSH) ? 'P' : '-',
-        TCP_FLG_ISSET(flg, TCP_FLG_RST) ? 'R' : '-',
-        TCP_FLG_ISSET(flg, TCP_FLG_SYN) ? 'S' : '-',
-        TCP_FLG_ISSET(flg, TCP_FLG_FIN) ? 'F' : '-');
+    snprintf(str, sizeof(str), "%c%c%c%s%c**",
+        ND6_RA_FLG_ISSET(flg, ND6_RA_FLG_MGMT)  ? 'M'  : '-',
+        ND6_RA_FLG_ISSET(flg, ND6_RA_FLG_OTHER) ? 'O'  : '-',
+        ND6_RA_FLG_ISSET(flg, ND6_RA_FLG_HOME)  ? 'H'  : '-',
+        ND6_RA_FLG_ISSET(flg, ND6_RA_FLG_PRF)   ? "Pr" : "--",
+        ND6_RA_FLG_ISSET(flg, ND6_RA_FLG_PROXY) ? 'P'  : '-');
     return str;
 }
-*/
+
+static char *
+icmp6_na_flg_ntoa(uint32_t flg)
+{
+    static char str[9];
+
+    snprintf(str, sizeof(str), "%c%c%c",
+        ND6_NA_FLG_ISSET(flg, ND6_NA_FLAG_ROUTER)  ? 'R' : '-',
+        ND6_NA_FLG_ISSET(flg, ND6_NA_FLAG_SOLICITED) ? 'S' : '-',
+        ND6_NA_FLG_ISSET(flg, ND6_NA_FLAG_OVERRIDE)  ? 'O' : '-');
+    return str;
+}
 
 void 
 icmp6_dump(const uint8_t *data, size_t len)
@@ -96,9 +100,8 @@ icmp6_dump(const uint8_t *data, size_t len)
         break;
     case ICMPV6_TYPE_ROUTER_ADV:
         ra = (struct nd_router_adv *)data;
-        fprintf(stderr, " cur hlimit: %u\n", ra->cur_hlim);
-        fprintf(stderr, "      flags: m=%u, o=%u, h=%u, prf=%u, p=%u, reserved=%u\n", ra->m, ra->o, ra->h, ra->prf, ra->p, ra->reserved);
-        //fprintf(stderr, "      flags: 0x%02x (%s)\n", , icmp6_ra_flg_ntoa(hdr->flg));
+        fprintf(stderr, "     hlimit: %u\n", ra->cur_hlim);
+        fprintf(stderr, "      flags: 0x%02x (%s)\n", ra->nd_ra_flg, icmp6_ra_flg_ntoa(ra->nd_ra_flg));
         fprintf(stderr, "   lifetime: %u\n", ntoh16(ra->lifetime));
         fprintf(stderr, "  reachable: %u\n", ntoh32(ra->reachable_time));
         fprintf(stderr, "  retrasmit: %u\n", ntoh32(ra->retransmit_time));
@@ -112,7 +115,7 @@ icmp6_dump(const uint8_t *data, size_t len)
         break;
     case ICMPV6_TYPE_NEIGHBOR_ADV:
         na = (struct nd_neighbor_adv *)hdr;
-        fprintf(stderr, "   reserved: 0x%04x\n", ntoh16(na->nd_na_reserved));
+        fprintf(stderr, "   reserved: 0x%08x (%s)\n", ntoh16(na->nd_na_flg), icmp6_na_flg_ntoa(na->nd_na_flg));
         fprintf(stderr, "     target: %s\n", ip6_addr_ntop(na->target, addr, sizeof(addr)));
         nd6_options_dump((uint8_t *)(na + 1), len - sizeof(*na));
         break;

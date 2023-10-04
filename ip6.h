@@ -20,7 +20,7 @@
 #define IPV6_ADDR_LEN16     8
 #define IPV6_ADDR_LEN32     4
 #define IPV6_ADDR_STR_LEN   40  /* "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd\0" */
-#define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 7)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]yyyyy\0 */
+#define IPV6_ENDPOINT_STR_LEN (IPV6_ADDR_STR_LEN + 8)  /* [xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx]:yyyyy\0 */
 #define IPV6_ADDR(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16) {{{ \
     x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16 }}}
 
@@ -62,13 +62,14 @@
 /* typedef uint8_t[16] ip6_addr_t */
 typedef struct {
     union {
-        uint8_t __addr8[16];
-        uint16_t __addr16[8];
-        uint32_t __addr32[4];
-    } __addr;
-#define addr8   __addr.__addr8
-#define addr16  __addr.__addr16
-#define addr32  __addr.__addr32
+        uint8_t __u6_addr8[16];
+        uint16_t __u6_addr16[8];
+        uint32_t __u6_addr32[4];
+    } __addr_un;
+#define addr8   __addr_un.__u6_addr8
+#define addr16  __addr_un.__u6_addr16
+#define addr32  __addr_un.__u6_addr32
+// TODO: s6_*
 } ip6_addr_t;
 
 /* ip6_iface state flags */
@@ -84,15 +85,18 @@ typedef struct {
 struct ip6_iface {
     struct net_iface iface;
     struct ip6_iface *next; /* unicast */
-    int slaac;              /* slaac enable flag */
+    struct {
+        int running;
+        int rdns;
+    } slaac;  /* SLAAC context */
     struct {
         ip6_addr_t addr;
         ip6_addr_t netmask;
         uint8_t prefixlen;
         uint32_t scope;
         uint8_t state;      /* use with auto-generated addresses */
-    } ip6_addr_filter;
-#define ip6_addr ip6_addr_filter
+    } ip6_addr_ctx;
+#define ip6_addr ip6_addr_ctx    
 };
 
 struct ip6_hdr {
@@ -105,8 +109,8 @@ struct ip6_hdr {
 	uint8_t  ip6_hlim;  /* hop limit */
     ip6_addr_t ip6_src;
     ip6_addr_t ip6_dst;
-#define ip6_vfc		ip6_un.ip6_un_vfc
-#define ip6_flow	ip6_un.ip6_un_flow
+#define ip6_vfc	 ip6_un.ip6_un_vfc
+#define ip6_flow ip6_un.ip6_un_flow    
 };
 
 /* for checksum calculation */
@@ -129,26 +133,14 @@ extern const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX;
 #define IPV6_MULTICAST_ADDR_PREFIX_LEN          8
 #define IPV6_LINK_LOCAL_ADDR_PREFIX_LEN         10
 
-struct ip6_endpoint {
-    ip6_addr_t addr;
-    uint16_t port;
-};
-
 extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
-extern int
-ip6_endpoint_pton(const char *p, struct ip6_endpoint *n);
-extern char *
-ip6_endpoint_ntop(const struct ip6_endpoint *n, char *p, size_t size);
-
 extern void 
-ip6_solicited_node_mcaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
+ip6_addr_create_solicit_mcastaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
 extern void
-ip6_generate_linklocaladdr(const uint8_t *eui64, ip6_addr_t *ip6addr);
-extern void
-ip6_generate_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
+ip6_addr_create_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
 
 extern struct ip6_iface *
 ip6_rule_addr_select(const ip6_addr_t dst);
@@ -164,7 +156,7 @@ extern struct ip6_iface *
 ip6_route_get_iface(ip6_addr_t dst);
 
 extern struct ip6_iface *
-ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac);
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int enable);
 extern int
 ip6_iface_register(struct net_device *dev, struct ip6_iface *iface);
 extern struct ip6_iface *
@@ -175,6 +167,8 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
 
 extern int
 ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface));
+extern struct ip6_iface *
+ip6_iface_init(struct net_device *dev);
 
 extern int
 ip6_init(void);

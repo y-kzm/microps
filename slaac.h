@@ -10,7 +10,7 @@
 
 extern void
 slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
-extern struct ip6_iface *
-slaac_run(struct net_device *dev);
+extern int
+slaac_run(struct ip6_iface *iface);
 
 #endif

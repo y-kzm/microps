@@ -6,6 +6,7 @@
 #include <sys/types.h>
 
 #include "net.h"
+#include "ip6.h"
 
 #define IP_VERSION_IPV4 4
 
@@ -27,8 +28,18 @@
 
 typedef uint32_t ip_addr_t;
 
+typedef struct {
+    unsigned short family;
+    union {
+        ip_addr_t __u_addr4;
+        ip6_addr_t __u_addr6;
+    } __ip_un;
+#define s_addr4 __ip_un.__u_addr4
+#define s_addr6 __ip_un.__u_addr6
+} ip_addr_storage;
+
 struct ip_endpoint {
-    ip_addr_t addr;
+    ip_addr_storage addr;
     uint16_t port;
 };
 
@@ -48,7 +59,7 @@ ip_addr_pton(const char *p, ip_addr_t *n);
 extern char *
 ip_addr_ntop(const ip_addr_t n, char *p, size_t size);
 extern int
-ip_endpoint_pton(const char *p, struct ip_endpoint *n);
+ip_endpoint_pton(unsigned short family, const char *p, struct ip_endpoint *n);
 extern char *
 ip_endpoint_ntop(const struct ip_endpoint *n, char *p, size_t size);
 

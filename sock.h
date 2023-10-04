@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "ip.h"
+#include "ip6.h"
 
 #define PF_UNSPEC   0
 #define PF_LOCAL    1
@@ -24,7 +25,8 @@
 
 #define INADDR_ANY ((ip_addr_t)0)
 
-#define SOCKADDR_STR_LEN IP_ENDPOINT_STR_LEN
+#define SOCKADDR_IN_STR_LEN  IP_ENDPOINT_STR_LEN
+#define SOCKADDR_IN6_STR_LEN IPV6_ENDPOINT_STR_LEN
 
 struct sock {
     int used;
@@ -44,10 +46,18 @@ struct sockaddr_in {
     ip_addr_t sin_addr;
 };
 
+struct sockaddr_in6 {
+    unsigned short sin6_family;
+    uint16_t sin6_port;
+    uint32_t sin6_flowinfo;
+    ip6_addr_t sin6_addr;
+    uint32_t sin6_scope;
+};
+
 #define IFNAMSIZ 16
 
 extern int
-sockaddr_pton(const char *p, struct sockaddr *n, size_t size);
+sockaddr_pton(unsigned short family, const char *p, struct sockaddr *n, size_t size);
 extern char *
 sockaddr_ntop(const struct sockaddr *n, char *p, size_t size);
 

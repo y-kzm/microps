@@ -115,7 +115,7 @@ main(int argc, char *argv[])
         fprintf(stderr, "Usage: %s [-s local_addr] [-p local_port] foreign_addr:port\n", argv[0]);
         return -1;
     }
-    if (sockaddr_pton(argv[optind], (struct sockaddr *)&foreign, sizeof(foreign)) == -1) {
+    if (sockaddr_pton(AF_INET, argv[optind], (struct sockaddr *)&foreign, sizeof(foreign)) == -1) {
         errorf("sockaddr_pton() failure, %s", argv[optind]);
         return -1;
     }

@@ -4,13 +4,8 @@ APPS = app/udpc.exe \
        app/tcps.exe \
 
 TESTS = test/test.exe \
-        test/v6test_tap.exe \
-        test/v6test_pcap.exe \
-        test/v6test_udp_srv.exe \
-        test/v6test_udp_cli.exe \
-        test/v6test_slaac.exe \
-        test/v6test_tcp.exe \
-        test/v6test_tcp_pcap.exe \
+	  	  test/udp6c.exe \
+	  	  test/udp6s.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -27,8 +22,6 @@ OBJS = util.o \
        ip6.o \
        icmp6.o \
        nd6.o \
-       udp6.o \
-       tcp6.o \
        slaac.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -iquote .

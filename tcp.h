@@ -115,18 +115,4 @@ tcp_listen(int id, int backlog);
 extern int
 tcp_accept(int id, struct ip_endpoint *foreign);
 
-/* tcp6.c */
-extern int 
-tcp6_init(void);
-
-extern int
-tcp6_open_rfc793(struct ip6_endpoint *local, struct ip6_endpoint *foreign, int active);
-
-extern int
-tcp6_close(int id);
-extern ssize_t
-tcp6_send(int id, uint8_t *data, size_t len);
-extern ssize_t
-tcp6_receive(int id, uint8_t *buf, size_t size);
-
 #endif

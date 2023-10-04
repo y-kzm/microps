@@ -67,7 +67,7 @@ ether_addr_ntop(const uint8_t *n, char *p, size_t size)
 
 /* Brief: ipv6 addr to mac addr */
 static int
-ether_addr_ipv6mcaddr(const uint8_t *hwaddr)
+ether_addr_create_mcastaddr(const uint8_t *hwaddr)
 {
     if (hwaddr[0] == 0x33 && hwaddr[1] == 0x33) {
         return 0;
@@ -76,7 +76,7 @@ ether_addr_ipv6mcaddr(const uint8_t *hwaddr)
 }
 
 void
-ether_addr_eui64(const uint8_t *hwaddr, uint8_t *eui64)
+ether_addr_create_eui64(const uint8_t *hwaddr, uint8_t *eui64)
 {
     eui64[0] = hwaddr[0];
     eui64[1] = hwaddr[1];
@@ -93,6 +93,7 @@ ether_addr_eui64(const uint8_t *hwaddr, uint8_t *eui64)
     eui64[0] ^= 0x02;
 }
 
+#ifdef HDRDUMP
 static void
 ether_dump(const uint8_t *frame, size_t flen)
 {
@@ -109,6 +110,7 @@ ether_dump(const uint8_t *frame, size_t flen)
 #endif
     funlockfile(stderr);
 }
+#endif
 
 int
 ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst, ssize_t (*callback)(struct net_device *dev, const uint8_t *data, size_t len))
@@ -150,7 +152,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     hdr = (struct ether_hdr *)frame;
     if (memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0) {
         if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
-            if (ether_addr_ipv6mcaddr(hdr->dst) != 0) {
+            if (ether_addr_create_mcastaddr(hdr->dst) != 0) {
                 /* for other host */
                 debugf("for other host %s", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
                 return -1;

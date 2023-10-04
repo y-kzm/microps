@@ -86,7 +86,7 @@ main(int argc, char *argv[])
     long int port;
     struct sockaddr_in local = { .sin_family=AF_INET }, foreign;
     int foreignlen;
-    char addr[SOCKADDR_STR_LEN];
+    char addr[SOCKADDR_IN_STR_LEN];
     uint8_t buf[1024];
     ssize_t ret;
 

@@ -25,7 +25,8 @@
 
 /* default route */
 #define DEFAULT_GATEWAY         "192.0.2.1"
-#define IPV6_DEFAULT_GATEWAY    "fd09:471d:e8d3:1a0c:1897:ccf0:1945:a470"
+//#define IPV6_DEFAULT_GATEWAY    "fd09:471d:e8d3:1a0c:1897:ccf0:1945:a470"
+#define IPV6_DEFAULT_GATEWAY    "2001:db::1"
 
 const uint8_t test_data[] = {
     0x60, 0x0a, 0x09, 0x00, 

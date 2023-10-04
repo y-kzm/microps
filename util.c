@@ -27,16 +27,16 @@ lprintf(FILE *fp, int level, const char *file, int line, const char *func, const
     strftime(timestamp, sizeof(timestamp), "%T", localtime_r(&tv.tv_sec, &tm));
     switch (level) {
         case 'I':
-            n += fprintf(fp, "%s.%03d \x1b[36m[%c]\x1b[0m %s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
+            n += fprintf(fp, "%s.%03d \x1b[36m[%c]\x1b[0m %-22s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
             break;
         case 'D':
-            n += fprintf(fp, "%s.%03d \x1b[32m[%c]\x1b[0m %s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
+            n += fprintf(fp, "%s.%03d \x1b[32m[%c]\x1b[0m %-22s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
             break;
         case 'W':
-            n += fprintf(fp, "%s.%03d \x1b[33m[%c]\x1b[0m %s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
+            n += fprintf(fp, "%s.%03d \x1b[33m[%c]\x1b[0m %-22s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
             break;
         case 'E':
-            n += fprintf(fp, "%s.%03d \x1b[31m[%c]\x1b[0m %s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
+            n += fprintf(fp, "%s.%03d \x1b[31m[%c]\x1b[0m %-22s: ", timestamp, (int)(tv.tv_usec / 1000), level, func);
             break;
         default:
             break;

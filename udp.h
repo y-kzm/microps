@@ -47,22 +47,4 @@ udp_recvfrom(int id, uint8_t *buf, size_t size, struct ip_endpoint *foreign);
 extern int
 udp_close(int id);
 
-/* udp6.c */
-extern ssize_t
-udp6_output(struct ip6_endpoint *src, struct ip6_endpoint *dst, const  uint8_t *data, size_t len);
-
-extern int
-udp6_init(void);
-
-extern int
-udp6_open(void);
-extern int
-udp6_bind(int id, struct ip6_endpoint *local);
-extern int
-udp6_close(int id);
-extern ssize_t
-udp6_sendto(int id, uint8_t *data, size_t len, struct ip6_endpoint *foreign);
-extern ssize_t
-udp6_recvfrom(int id, uint8_t *buf, size_t size, struct ip6_endpoint *foreign);
-
 #endif
