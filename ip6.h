@@ -33,12 +33,12 @@
         (masked)->addr32[2] = (addr1)->addr32[2] & (addr2)->addr32[2]; \
         (masked)->addr32[3] = (addr1)->addr32[3] & (addr2)->addr32[3]; \
     }
-#define IPV6_ADDR_IS_MULTICAST(ip6addr) ((ip6addr)->addr8[0] == 0xff)
-#define IPV6_ADDR_IS_UNSPECIFIED(ip6addr) (memcmp((ip6addr)->addr8, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN) == 0)
-#define IPV6_ADDR_IS_LOOPBACK(ip6addr) IPV6_ADDR_EQUAL(ip6addr, &IPV6_LOOPBACK_ADDR)
-#define IPV6_ADDR_IS_LINKLOCAL(ip6addr) ((ip6addr)->addr8[0] == 0xfe && ((ip6addr)->addr8[1] & 0xc0) == 0x80)
-#define IPV6_ADDR_IS_SITELOCAL(ip6addr) ((ip6addr)->addr8[0] == 0xfe && ((ip6addr)->addr8[1] & 0xc0) == 0xc0)
-#define IPV6_ADDR_MC_SCOPE(ip6addr) ((ip6addr)->addr8[1] & 0x0f)
+#define IPV6_ADDR_IS_MULTICAST(addr) ((addr)->addr8[0] == 0xff)
+#define IPV6_ADDR_IS_UNSPECIFIED(addr) (memcmp((addr)->addr8, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN) == 0)
+#define IPV6_ADDR_IS_LOOPBACK(addr) IPV6_ADDR_EQUAL(addr, &IPV6_LOOPBACK_ADDR)
+#define IPV6_ADDR_IS_LINKLOCAL(addr) ((addr)->addr8[0] == 0xfe && ((addr)->addr8[1] & 0xc0) == 0x80)
+#define IPV6_ADDR_IS_SITELOCAL(addr) ((addr)->addr8[0] == 0xfe && ((addr)->addr8[1] & 0xc0) == 0xc0)
+#define IPV6_ADDR_MC_SCOPE(addr) ((addr)->addr8[1] & 0x0f)
 
 /* ipv6 address scope */
 #define IPV6_ADDR_SCOPE_INTFACELOCAL 0x01
@@ -46,18 +46,6 @@
 #define IPV6_ADDR_SCOPE_SITELOCAL	 0x05 /* deprecated */ 
 #define IPV6_ADDR_SCOPE_ORGLOCAL	 0x08
 #define IPV6_ADDR_SCOPE_GLOBAL		 0x0e
-
-/* protpcpl number (next header) */
-/* see https://www.iana.org/assignments/protocol-numbers/protocol-numbers.txt */
-#define IPV6_NEXT_HOP_BY_HOP    0x00 
-#define IPV6_NEXT_TCP           0x06
-#define IPV6_NEXT_UDP           0x11
-#define IPV6_NEXT_IPV6          0x29 
-#define IPV6_NEXT_ROUTING       0x2b 
-#define IPV6_NEXT_FRAGMENT      0x2c 
-#define IPV6_NEXT_ICMPV6        0x3a 
-#define IPV6_NEXT_NO_NEXT       0x3b
-#define IPV6_NEXT_DEST_OPT      0x3c
 
 /* typedef uint8_t[16] ip6_addr_t */
 typedef struct {
@@ -69,7 +57,6 @@ typedef struct {
 #define addr8   __addr_un.__u6_addr8
 #define addr16  __addr_un.__u6_addr16
 #define addr32  __addr_un.__u6_addr32
-// TODO: s6_*
 } ip6_addr_t;
 
 /* ip6_iface state flags */

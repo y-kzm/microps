@@ -22,9 +22,16 @@
 #define IP_ENDPOINT_STR_LEN (IP_ADDR_STR_LEN + 6) /* xxx.xxx.xxx.xxx:yyyyy\n */
 
 /* see https://www.iana.org/assignments/protocol-numbers/protocol-numbers.txt */
-#define IP_PROTOCOL_ICMP    0x01
-#define IP_PROTOCOL_TCP     0x06
-#define IP_PROTOCOL_UDP     0x11
+#define PROTOCOL_HOPOPT   0x00
+#define PROTOCOL_ICMP     0x01
+#define PROTOCOL_TCP      0x06
+#define PROTOCOL_UDP      0x11
+#define PROTOCOL_IPV6     0x29 
+#define PROTOCOL_ROUTING  0x2b 
+#define PROTOCOL_FRAGMENT 0x2c 
+#define PROTOCOL_ICMPV6   0x3a 
+#define PROTOCOL_NONE     0x3b
+#define PROTOCOL_DSTOPT   0x3c
 
 typedef uint32_t ip_addr_t;
 
@@ -49,6 +56,14 @@ struct ip_iface {
     ip_addr_t unicast;
     ip_addr_t netmask;
     ip_addr_t broadcast;
+};
+
+struct ip_pseudo_hdr {
+    uint32_t src;
+    uint32_t dst;
+    uint8_t zero;
+    uint8_t protocol;
+    uint16_t len;
 };
 
 extern const ip_addr_t IP_ADDR_ANY;

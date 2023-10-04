@@ -8,6 +8,7 @@
 #include "util.h"
 #include "net.h"
 #include "ether.h"
+#include "ip.h"
 #include "ip6.h"
 #include "icmp6.h"
 #include "nd6.h"
@@ -542,27 +543,27 @@ ip6_iface_select(ip6_addr_t addr)
  */
 
 static void
-ip6_input_hbh()
+ip6_hbh_input()
 {
-    debugf("----------- called ip6_input_hbh(): Hop-by-Hop -----------");
+    warnf("Hop-by-Hop option is not supported: ignored");
 }
 
 static void
-route6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+ip6_route_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("-----------  called route6_input(): Routing -----------");
+    warnf("Routing option is not supported: ignored");
 }
 
 static void
-frag6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+ip6_frag_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("----------- called frag6_input(): Fragment -----------");
+    warnf("Fragment option is not supported; ignored");
 }
 
 static void
-dest6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
+ip6_dest_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
-    debugf("----------- called dest6_input(): Destination -----------");
+    warnf("Destination option is not supported: ignored");
 }
 
 static void
@@ -627,15 +628,15 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     ip6_dump(data, len);
 #endif
     
-    if (hdr->ip6_nxt == IPV6_NEXT_HOP_BY_HOP) {
-        ip6_input_hbh();
-        return;
-    } else {   
-        for (proto = protocols; proto; proto = proto->next) {
-            if (proto->type == hdr->ip6_nxt) {
-                proto->handler((uint8_t *)hdr + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen), hdr->ip6_src, hdr->ip6_dst, iface);
-                return;
-            }
+   // if (hdr->ip6_nxt == PROTOCOL_HOPOPT) {
+   //     ip6_input_hbh();
+   //     return;
+   // } else {  
+
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == hdr->ip6_nxt) {
+            proto->handler((uint8_t *)hdr + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen), hdr->ip6_src, hdr->ip6_dst, iface);
+            return;
         }
     }
 }
@@ -651,7 +652,7 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
             ip6_addr_mcastaddr_to_hwaddr(dst, hwaddr);
         } else {
             ret = nd6_resolve(iface, dst, hwaddr);
-            // MEMO: 解決できなかったときにdataをキューで保持
+            // TODO: 解決できなかったときにdataをキューで保持
             if (ret != 1) {
                 return ret;
             }
@@ -780,8 +781,7 @@ ip6_iface_init(struct net_device *dev)
         errorf("ip6_route_set_multicast() failure");
         return NULL;
     }
-    // MEMO: 自主的なNAの送信
-
+    
     debugf("created Link-Local Address %s on interface %s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), dev->name);
     return iface;
 }
@@ -795,15 +795,19 @@ ip6_init(void)
     }
 
     /* Extension headers */
-    if (ip6_protocol_register("ROUING", IPV6_NEXT_ROUTING, route6_input) == -1) {
+    if (ip6_protocol_register("HOPOPT", PROTOCOL_HOPOPT, ip6_hbh_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;
     }
-    if (ip6_protocol_register("FRAGMENT", IPV6_NEXT_FRAGMENT, frag6_input) == -1) {
+    if (ip6_protocol_register("ROUING", PROTOCOL_ROUTING, ip6_route_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;
     }
-    if (ip6_protocol_register("DESTOPT", IPV6_NEXT_DEST_OPT, dest6_input) == -1) {
+    if (ip6_protocol_register("FRAGMENT", PROTOCOL_FRAGMENT, ip6_frag_input) == -1) {
+        errorf("ip6_protocol_register() failure");
+        return -1;
+    }
+    if (ip6_protocol_register("DSTOPT", PROTOCOL_DSTOPT, ip6_dest_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;
     }

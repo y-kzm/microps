@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "util.h"
+#include "ip.h"
 #include "ip6.h"
 #include "icmp6.h"
 #include "nd6.h"
@@ -149,10 +150,6 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         return;        
     }
 
-    if (IPV6_ADDR_IS_MULTICAST(&dst)) {
-        // TODO: 
-    }
-
     hdr = (struct icmp6_hdr *)data;
 
     /* verify checksum value */
@@ -160,7 +157,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     pseudo.dst = dst;
     pseudo.len = hton16(len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
-    pseudo.nxt = IPV6_NEXT_ICMPV6;
+    pseudo.nxt = PROTOCOL_ICMPV6;
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     if (cksum16((uint16_t *)hdr, len, psum) != 0) {
         errorf("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->icmp6_sum), ntoh16(cksum16((uint16_t *)hdr, len, -hdr->icmp6_sum + psum)));
@@ -278,7 +275,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
     pseudo.dst = dst;
     pseudo.len = hton32(total);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
-    pseudo.nxt = IPV6_NEXT_ICMPV6;
+    pseudo.nxt = PROTOCOL_ICMPV6;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->icmp6_sum = cksum16((uint16_t *)buf, total, psum);
 
@@ -289,13 +286,13 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
 #ifdef HDRDUMP
     icmp6_dump((uint8_t *)hdr, total);
 #endif
-    return ip6_output(IPV6_NEXT_ICMPV6, buf, total, src, dst);
+    return ip6_output(PROTOCOL_ICMPV6, buf, total, src, dst);
 }
 
 int
 icmp6_init(void)
 {
-    if (ip6_protocol_register("ICMPV6", IPV6_NEXT_ICMPV6, icmp6_input) == -1) {
+    if (ip6_protocol_register("ICMPV6", PROTOCOL_ICMPV6, icmp6_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;
     }

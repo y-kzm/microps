@@ -118,6 +118,8 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
     uint8_t frame[ETHER_FRAME_SIZE_MAX] = {};
     struct ether_hdr *hdr;
     size_t flen, pad = 0;
+    char addr1[ETHER_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
 
     hdr = (struct ether_hdr *)frame;
     memcpy(hdr->dst, dst, ETHER_ADDR_LEN);
@@ -128,7 +130,10 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
         pad = ETHER_PAYLOAD_SIZE_MIN - len;
     }
     flen = sizeof(*hdr) + len + pad;
-    debugf("dev=%s, type=%s(0x%04x), len=%zu", dev->name, ether_type_ntoa(hdr->type), type, flen);
+    debugf("%s => %s, dev=%s, type=%s(0x%04x), len=%zu",
+        ether_addr_ntop(hdr->src, addr1, sizeof(addr1)), 
+        ether_addr_ntop(hdr->dst, addr2, sizeof(addr2)), dev->name, 
+        ether_type_ntoa(hdr->type), type, flen);
 #ifdef HDRDUMP
     ether_dump(frame, flen);
 #endif
@@ -142,7 +147,8 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     ssize_t flen;
     struct ether_hdr *hdr;
     uint16_t type;
-    char addr[ETHER_ADDR_STR_LEN];
+    char addr1[ETHER_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
 
     flen = callback(dev, frame, sizeof(frame));
     if (flen < (ssize_t)sizeof(*hdr)) {
@@ -154,13 +160,16 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
         if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
             if (ether_addr_create_mcastaddr(hdr->dst) != 0) {
                 /* for other host */
-                debugf("for other host %s", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
+                debugf("for other host %s", ether_addr_ntop(hdr->dst, addr1, sizeof(addr1)));
                 return -1;
             }
         }
     }
     type = ntoh16(hdr->type);
-    debugf("dev=%s, type=%s(0x%04x), len=%zu", dev->name, ether_type_ntoa(hdr->type), type, flen);
+    debugf("%s => %s, dev=%s, type=%s(0x%04x), len=%zu", 
+            ether_addr_ntop(hdr->src, addr1, sizeof(addr1)), 
+            ether_addr_ntop(hdr->dst, addr2, sizeof(addr2)), dev->name, 
+            ether_type_ntoa(hdr->type), type, flen);
 #ifdef HDRDUMP
     ether_dump(frame, flen);
 #endif
