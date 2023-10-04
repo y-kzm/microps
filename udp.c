@@ -15,14 +15,6 @@
 
 #include "sock.h"
 
-struct pseudo_hdr {
-    uint32_t src;
-    uint32_t dst;
-    uint8_t zero;
-    uint8_t protocol;
-    uint16_t len;
-};
-
 struct udp_pcb {
     int state;
     struct ip_endpoint local;
@@ -153,7 +145,7 @@ udp_pcb_id(struct udp_pcb *pcb)
 static void
 udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface)
 {
-    struct pseudo_hdr pseudo;
+    struct ip_pseudo_hdr pseudo;
     uint16_t psum = 0;
     struct udp_hdr *hdr;
     char addr1[IP_ADDR_STR_LEN];
@@ -179,7 +171,7 @@ udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
     pseudo.src = udp4_src.s_addr4;
     pseudo.dst = udp4_dst.s_addr4;
     pseudo.zero = 0;
-    pseudo.protocol = IP_PROTOCOL_UDP;
+    pseudo.protocol = PROTOCOL_UDP;
     pseudo.len = hton16(len);
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     if (cksum16((uint16_t *)hdr, len, psum) != 0) {
@@ -250,7 +242,7 @@ udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     pseudo.dst = udp6_dst.s_addr6;
     pseudo.len = hton16(len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
-    pseudo.nxt = IPV6_NEXT_UDP;
+    pseudo.nxt = PROTOCOL_UDP;
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     if (cksum16((uint16_t *)hdr, len, psum) != 0) {
         errorf("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->sum), ntoh16(cksum16((uint16_t *)hdr, len, -hdr->sum + psum)));
@@ -294,7 +286,7 @@ udp_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *dat
 {
     uint8_t buf[IP_PAYLOAD_SIZE_MAX];
     struct udp_hdr *hdr;
-    struct pseudo_hdr pseudo;
+    struct ip_pseudo_hdr pseudo;
     uint16_t total, psum = 0;
     char ep1[IP_ENDPOINT_STR_LEN];
     char ep2[IP_ENDPOINT_STR_LEN];
@@ -313,7 +305,7 @@ udp_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *dat
     pseudo.src = src->addr.s_addr4;
     pseudo.dst = dst->addr.s_addr4;
     pseudo.zero = 0;
-    pseudo.protocol = IP_PROTOCOL_UDP;
+    pseudo.protocol = PROTOCOL_UDP;
     pseudo.len = hton16(total);
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->sum = cksum16((uint16_t *)hdr, total, psum);
@@ -322,7 +314,7 @@ udp_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *dat
 #ifdef HDRDUMP
     udp_dump((uint8_t *)hdr, total);
 #endif
-    if (ip_output(IP_PROTOCOL_UDP, (uint8_t *)hdr, total, src->addr.s_addr4, dst->addr.s_addr4) == -1) {
+    if (ip_output(PROTOCOL_UDP, (uint8_t *)hdr, total, src->addr.s_addr4, dst->addr.s_addr4) == -1) {
         errorf("ip_output() failure");
         return -1;
     }
@@ -357,7 +349,7 @@ udp6_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *da
     pseudo.dst = dst->addr.s_addr6;
     pseudo.len = hton16(total);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
-    pseudo.nxt = IPV6_NEXT_UDP;
+    pseudo.nxt = PROTOCOL_UDP;
     psum =  ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->sum = cksum16((uint16_t *)buf, total, psum);
     debugf("%s => %s, len=%zu (payload=%zu)",
@@ -365,7 +357,7 @@ udp6_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *da
 #ifdef HDRDUMP
     udp_dump((uint8_t *)hdr, total);
 #endif
-    if (ip6_output(IPV6_NEXT_UDP, (uint8_t *)hdr, total, src->addr.s_addr6, dst->addr.s_addr6) == -1) {
+    if (ip6_output(PROTOCOL_UDP, (uint8_t *)hdr, total, src->addr.s_addr6, dst->addr.s_addr6) == -1) {
         errorf("ip6_output() failure");
         return -1;
     }
@@ -389,11 +381,11 @@ event_handler(void *arg)
 int
 udp_init(void)
 {
-    if (ip_protocol_register("UDP", IP_PROTOCOL_UDP, udp_input) == -1) {
+    if (ip_protocol_register("UDP", PROTOCOL_UDP, udp_input) == -1) {
         errorf("ip_protocol_register() failure");
         return -1;
     }
-    if (ip6_protocol_register("UDP", IPV6_NEXT_UDP, udp6_input) == -1) {
+    if (ip6_protocol_register("UDP", PROTOCOL_UDP, udp6_input) == -1) {
         errorf("ip6_protocol_register() failure");
         return -1;
     }
