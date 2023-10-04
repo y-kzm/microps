@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <unistd.h>
 
+/* flags for debug */
+//#define HEXDUMP
+//#define HDRDUMP
+//#define NDCACHEDUMP
+
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #endif
