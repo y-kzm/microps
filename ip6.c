@@ -25,12 +25,16 @@ struct ip6_route {
     ip6_addr_t network;
     ip6_addr_t netmask;
     ip6_addr_t nexthop;
-    struct ip6_iface *iface;
+    struct ip6_iface *iface; // TODO?: physical interface
+    //struct net_device *device;
 };
 
 static struct ip6_iface *ifaces;
 static struct ip6_protocol *protocols; 
 static struct ip6_route *routes;
+
+static uint8_t
+ip6_addr_netmask_to_prefixlen(ip6_addr_t netmask);
 
 // Unspecified IPv6 address
 const ip6_addr_t IPV6_UNSPECIFIED_ADDR = 
@@ -216,15 +220,15 @@ ip6_fib_dump()
     struct ip6_route *route;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
-    char addr3[IPV6_ADDR_STR_LEN]; 
+    char network[IPV6_ADDR_STR_LEN+4]; /* Add "/128" */
     
     flockfile(stderr);
-    fprintf(stderr, "network                                  netmask                                  nexthop                                  interface\n");
+    fprintf(stderr, "network                        nexthop                        interface\n");
+    fprintf(stderr, "=======================================================================\n");
     for (route = routes; route; route = route->next) {
-        fprintf(stderr, "%-40s %-40s %-40s %s\n", 
-                ip6_addr_ntop(route->network, addr1, sizeof(addr1)), 
-                ip6_addr_ntop(route->netmask, addr2, sizeof(addr2)),
-                ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)), 
+        sprintf(network, "%s/%d", ip6_addr_ntop(route->network, addr1, sizeof(addr1)), ip6_addr_netmask_to_prefixlen(route->netmask));
+        fprintf(stderr, "%-30s %-30s %-30s\n", 
+                network, ip6_addr_ntop(route->nexthop, addr2, sizeof(addr2)), 
                 route->iface->iface.dev->name);
     }
     funlockfile(stderr);
@@ -271,7 +275,7 @@ ip6_addr_create_solicit_mcastaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicite
 
 /* Brief: eui-64 addr to global addr */
 void
-ip6_addr_create_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
+ip6_addr_create_global(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
 {
     ip6addr->addr16[0] = prefix.addr16[0];
     ip6addr->addr16[1] = prefix.addr16[1];
@@ -317,11 +321,16 @@ ip6_addr_prefixlen_to_netmask(const uint8_t prefixlen, ip6_addr_t *netmask)
     return netmask;
 }
 
+/* Brief: netmask to prefix length */
 static uint8_t
 ip6_addr_netmask_to_prefixlen(ip6_addr_t netmask) {
-    uint8_t prefixlen = 64;
+    uint8_t prefixlen = 0;
+    int i = 0;
 
-    // TODO: 
+    while ((netmask.addr8[i] & 0xff) == 0xff) {
+        prefixlen += __CHAR_BIT__;
+        if (i++ >= 16) break;
+    }
 
     return prefixlen;
 }
@@ -378,11 +387,17 @@ ip6_route_lookup(ip6_addr_t dst)
 {
     struct ip6_route *route, *candidate = NULL;
     ip6_addr_t masked;
+#ifdef FIBDUMP
+    ip6_fib_dump();
+#endif
+
     for (route = routes; route; route = route->next) {
         IPV6_ADDR_MASK(&dst, &route->netmask, &masked);
         if (IPV6_ADDR_EQUAL(&masked, &route->network)) {
-            // TODO: Longest Matching
-            candidate = route;
+            /* Longest Matching */
+            if (!candidate || ip6_addr_netmask_to_prefixlen(candidate->netmask) < ip6_addr_netmask_to_prefixlen(route->netmask)) {
+                candidate = route;
+            }
         }
     }
 
@@ -393,7 +408,7 @@ ip6_route_lookup(ip6_addr_t dst)
 static struct ip6_route *
 ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct ip6_iface *iface)
 {
-    struct ip6_route *route;
+    struct ip6_route *route, *res;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr3[IPV6_ADDR_STR_LEN];
     char addr4[IPV6_ADDR_STR_LEN];
@@ -404,20 +419,21 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
         return NULL;
     }
 
-    /* MEMO: 
-    if (ip6_route_lookup(network) != NULL) {
-        debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
-        return NULL;
+    res = ip6_route_lookup(network); 
+    if (res != NULL) {
+        if (res->iface == iface) {
+            debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
+            return NULL;
+        }
     }
-    */
     
     route->network = network;
     IPV6_ADDR_COPY(&route->netmask, &netmask, IPV6_ADDR_LEN);
-    route->nexthop = nexthop;
+    IPV6_ADDR_COPY(&route->nexthop, &nexthop, IPV6_ADDR_LEN);
     route->iface = iface;
     route->next = routes;
     routes = route;
-    infof("network=%s, prefixlen=%d, nexthop=%s, iface=%s dev=%s",
+    infof("network=%s/%d, nexthop=%s, iface=%s, dev=%s",
         ip6_addr_ntop(route->network, addr1, sizeof(addr1)),
         ip6_addr_netmask_to_prefixlen(route->netmask),
         ip6_addr_ntop(route->nexthop, addr3, sizeof(addr3)),
@@ -431,13 +447,16 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
 int
 ip6_route_set_default_gateway(struct ip6_iface *iface, const char *gateway)
 {
-    ip6_addr_t gw;
+    ip6_addr_t gw, mask;
 
     if (ip6_addr_pton(gateway, &gw) == -1) {
         errorf("ip6_addr_pton() failure, addr=%s", gateway);
         return -1;
     }
-    if (!ip6_route_add(IPV6_UNSPECIFIED_ADDR, IPV6_UNSPECIFIED_ADDR, gw, iface)) {
+
+    ip6_addr_prefixlen_to_netmask(0, &mask);
+    IPV6_ADDR_MASK(&IPV6_UNSPECIFIED_ADDR, &mask, &mask); 
+    if (!ip6_route_add(IPV6_UNSPECIFIED_ADDR, mask, gw, iface)) {
         errorf("ip6_route_add() failure");
         return -1;
     }
@@ -450,13 +469,27 @@ ip6_route_set_multicast(struct ip6_iface *iface)
     ip6_addr_t mask;
 
     ip6_addr_prefixlen_to_netmask(IPV6_MULTICAST_ADDR_PREFIX_LEN, &mask);
-    
-    // MEMO: 全ノードマルチキャスト，Solicited-Nodeマルチキャストに参加
     IPV6_ADDR_MASK(&IPV6_MULTICAST_ADDR_PREFIX, &mask, &mask); 
     if (!ip6_route_add(IPV6_MULTICAST_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface)) {
         errorf("ip6_route_add() failure");
         return -1;
     }
+
+    return 0;
+}
+
+int
+ip6_route_set_linklocal(struct ip6_iface *iface)
+{
+    ip6_addr_t mask;
+
+    ip6_addr_prefixlen_to_netmask(64, &mask);
+    IPV6_ADDR_MASK(&IPV6_LINK_LOCAL_ADDR_PREFIX, &mask, &mask); 
+    if (!ip6_route_add(IPV6_LINK_LOCAL_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface)) {
+        errorf("ip6_route_add() failure");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -538,6 +571,28 @@ ip6_iface_select(ip6_addr_t addr)
     return entry;
 }
 
+struct ip6_iface *
+ip6_iface_select_linklocal()
+{
+    struct ip6_iface *entry;
+
+    for (entry = ifaces; entry; entry = entry->next) {
+        if (IPV6_ADDR_IS_LINKLOCAL(&entry->ip6_addr.addr)) {
+            break;
+        }
+    }
+    return entry;
+}
+
+/*
+ * Forward
+ */
+
+static void
+ip6_forward(){
+    warnf("forwarding is not supported: ignored");
+}
+
 /*
  * IPv6: input/output
  */
@@ -574,7 +629,9 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     struct ip6_iface *iface;
     struct net_iface *entry;
     struct ip6_protocol *proto;
-    char addr[IPV6_ADDR_STR_LEN];
+    struct ip6_route *route;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
 
     if (len < IPV6_HDR_SIZE) {
         errorf("too short");
@@ -612,26 +669,28 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         if (entry->family == NET_IFACE_FAMILY_IPV6) {
             iface = (struct ip6_iface *)entry;
             if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &hdr->ip6_dst)) {
+                /* Recognize as the packet addressed to our */
                 break;
             }
         }
     }
     if (!iface) {
         /* iface is not registered to the device */
-        // TODO: goto forwarding 
         return;
-    }    
+    }
 
-    debugf("dev=%s, iface=%s, next=%u, len=%u, frame=%u",
-        dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), hdr->ip6_nxt, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE, ntoh16(hdr->ip6_plen) + IPV6_HDR_SIZE + ETHER_HDR_SIZE);
+    debugf("%s => %s, dev=%s, len=%u" ,ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), 
+    ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)), dev->name, ntoh16(hdr->ip6_plen));
 #ifdef HDRDUMP
     ip6_dump(data, len);
 #endif
-    
-   // if (hdr->ip6_nxt == PROTOCOL_HOPOPT) {
-   //     ip6_input_hbh();
-   //     return;
-   // } else {  
+
+    route = ip6_route_lookup(hdr->ip6_dst);
+    if (!route) {
+        /* Recognize as the packet addressed to others */
+        ip6_forward();
+        return;
+    }
 
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->ip6_nxt) {
@@ -651,6 +710,7 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
         if (IPV6_ADDR_IS_MULTICAST(&dst)) {
             ip6_addr_mcastaddr_to_hwaddr(dst, hwaddr);
         } else {
+            //ret = nd6_resolve(ip6_iface_select_linklocal(), dst, hwaddr);
             ret = nd6_resolve(iface, dst, hwaddr);
             // TODO: 解決できなかったときにdataをキューで保持
             if (ret != 1) {
@@ -668,7 +728,8 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     uint8_t buf[IPV6_TOTAL_SIZE_MAX];
     struct ip6_hdr *hdr;
     uint16_t plen;
-    char addr[IPV6_ADDR_STR_LEN];
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
 
     hdr = (struct ip6_hdr *)buf;
     hdr->ip6_flow = 0x0000;
@@ -677,11 +738,12 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     hdr->ip6_plen = hton16(plen);
     hdr->ip6_nxt = next;
     hdr->ip6_hlim = 0xff;
-    hdr->ip6_src = src; 
-    hdr->ip6_dst = dst;
-    memcpy(hdr+1, data, len);  
+    IPV6_ADDR_COPY(&hdr->ip6_src, &src, IPV6_ADDR_LEN);
+    IPV6_ADDR_COPY(&hdr->ip6_dst, &dst, IPV6_ADDR_LEN);
+    memcpy(hdr + 1, data, len);  
     debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
-        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), len, sizeof*hdr);
+        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)), 
+        ip6_addr_ntop(nexthop, addr2, sizeof(addr2)), len, sizeof*hdr);
 #ifdef HDRDUMP
     ip6_dump(buf, sizeof(*hdr));
 #endif
@@ -712,20 +774,33 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
         errorf("no route to host, addr=%s", ip6_addr_ntop(dst, addr, sizeof(addr)));
         return -1;
     }
-    // マルチキャスト宛のときは置き換えない
-    //if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
-    //    iface = route->iface;
-    //}
-    if (!IPV6_ADDR_EQUAL(&src, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_EQUAL(&src, &iface->ip6_addr.addr)) {
+    if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
+        //TODO: net_deviceで判断するべき？ 論理interfaceにしてしまうとIPアドレスが変更されてしまう
+        iface = route->iface;
+    }
+
+    warnf("[!!!!! DEBUG !!!!!] iface address       = %s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)));  // TODO: remove
+    warnf("[!!!!! DEBUG !!!!!] source address      = %s", ip6_addr_ntop(src, addr, sizeof(addr)));  // TODO: remove
+    warnf("[!!!!! DEBUG !!!!!] destination address = %s", ip6_addr_ntop(dst, addr, sizeof(addr)));  // TODO: remove
+    /**
+     * microps      Linux
+     *   GUA-m <--- LLA-l
+     * (source address selection: LLA-m)
+     *   LLA-m ---> LLA-l
+     * (xxxxxxx)
+     *   GUA-m ---> LLA-l
+     * (ooooooo)
+     */
+    if (!IPV6_ADDR_EQUAL(&src, &iface->ip6_addr.addr)) {
         errorf("unable to output with specified source address, addr=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
         return -1;
     }
-    nexthop = !IPV6_ADDR_EQUAL(&route->nexthop, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_IS_MULTICAST(&dst) ? route->nexthop : dst;
+    nexthop = (!IPV6_ADDR_EQUAL(&route->nexthop, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_IS_MULTICAST(&dst)) ? route->nexthop : dst;
     if (NET_IFACE(iface)->dev->mtu < IPV6_HDR_SIZE + len) {
         errorf("too long, dev=%s, mtu=%u < %zu",
             NET_IFACE(iface)->dev->name, NET_IFACE(iface)->dev->mtu, IPV6_HDR_SIZE + len);
         return -1;
-    }    
+    }  
     if (ip6_output_core(iface, next, data, len, iface->ip6_addr.addr, dst, nexthop) == -1) {
         errorf("ip6_output_core() failure");
         return -1;

@@ -6,6 +6,8 @@ APPS = app/udpc.exe \
 TESTS = test/test.exe \
 	  	  test/udp6c.exe \
 	  	  test/udp6s.exe \
+	  	  test/tcp6c.exe \
+	  	  test/tcp6s.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \

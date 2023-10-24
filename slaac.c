@@ -20,7 +20,7 @@ slaac_addr_create_globaladdr(const uint8_t *hwaddr, const ip6_addr_t prefix, con
     uint8_t eui64[ETHER_EUI64_ID_LEN];
 
     ether_addr_create_eui64(hwaddr, eui64);
-    ip6_addr_create_globaladdr(eui64, prefix, prefixlen, ip6addr);
+    ip6_addr_create_global(eui64, prefix, prefixlen, ip6addr);
 }
 
 /*

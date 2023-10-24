@@ -13,6 +13,8 @@
 #include "ip6.h"
 #include "tcp.h"
 
+#include "sock.h"
+
 struct tcp_pcb {
     int state;
     int mode; /* user command mode */
@@ -112,8 +114,8 @@ tcp_pcb_release(struct tcp_pcb *pcb)
 {
     struct queue_entry *entry;
     struct tcp_pcb *est;
-    char ep1[IP_ENDPOINT_STR_LEN];
-    char ep2[IP_ENDPOINT_STR_LEN];
+    char ep1[IPV6_ENDPOINT_STR_LEN];
+    char ep2[IPV6_ENDPOINT_STR_LEN];
 
     if (sched_ctx_destroy(&pcb->ctx) == -1) {
         sched_wakeup(&pcb->ctx);
@@ -136,20 +138,42 @@ tcp_pcb_select(struct ip_endpoint *local, struct ip_endpoint *foreign)
     struct tcp_pcb *pcb, *listen_pcb = NULL;
 
     for (pcb = pcbs; pcb < tailof(pcbs); pcb++) {
-        // case AF_INET
-        if ((pcb->local.addr.s_addr4 == IP_ADDR_ANY || pcb->local.addr.s_addr4 == local->addr.s_addr4) && pcb->local.port == local->port) {
-            if (!foreign) {
-                return pcb;
-            }
-            if (pcb->foreign.addr.s_addr4 == foreign->addr.s_addr4 && pcb->foreign.port == foreign->port) {
-                return pcb;
-            }
-            if (pcb->state == TCP_PCB_STATE_LISTEN) {
-                if (pcb->foreign.addr.s_addr4 == IP_ADDR_ANY && pcb->foreign.port == 0) {
-                    /* LISTENed with wildcard foreign address/port */
-                    listen_pcb = pcb;
+        switch (local->addr.family) {    
+        case AF_INET:
+            if ((pcb->local.addr.s_addr4 == IP_ADDR_ANY || pcb->local.addr.s_addr4 == local->addr.s_addr4) && pcb->local.port == local->port) {
+                if (!foreign) {
+                    return pcb;
+                }
+                if (pcb->foreign.addr.s_addr4 == foreign->addr.s_addr4 && pcb->foreign.port == foreign->port) {
+                    return pcb;
+                }
+                if (pcb->state == TCP_PCB_STATE_LISTEN) {
+                    if (pcb->foreign.addr.s_addr4 == IP_ADDR_ANY && pcb->foreign.port == 0) {
+                        /* LISTENed with wildcard foreign address/port */
+                        listen_pcb = pcb;
+                    }
                 }
             }
+            break;
+        case AF_INET6:
+            if ((IPV6_ADDR_EQUAL(&pcb->local.addr.s_addr6, &IPV6_UNSPECIFIED_ADDR) || IPV6_ADDR_EQUAL(&pcb->local.addr.s_addr6, &local->addr.s_addr6))
+                && pcb->local.port == local->port) {
+                if (!foreign) {
+                    return pcb;
+                }
+                if (IPV6_ADDR_EQUAL(&pcb->foreign.addr.s_addr6, &foreign->addr.s_addr6) && pcb->foreign.port == foreign->port) {
+                    return pcb;
+                }
+                if (pcb->state == TCP_PCB_STATE_LISTEN) {
+                    if (IPV6_ADDR_EQUAL(&pcb->foreign.addr.s_addr6, &IPV6_UNSPECIFIED_ADDR) && pcb->foreign.port == 0) {
+                        /* LISTENed with wildcard foreign address/port */
+                        listen_pcb = pcb;
+                    }
+                }
+            }
+            break;
+        default:
+            break;
         }
     }
     return listen_pcb;
@@ -260,41 +284,79 @@ tcp_set_timewait_timer(struct tcp_pcb *pcb)
 static ssize_t
 tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_t *data, size_t len, struct ip_endpoint *local, struct ip_endpoint *foreign)
 {
-    uint8_t buf[IP_PAYLOAD_SIZE_MAX] = {};
+    uint8_t buf1[IP_PAYLOAD_SIZE_MAX] = {};
+    uint8_t buf2[IPV6_PAYLOAD_SIZE_MAX] = {};
     struct tcp_hdr *hdr;
     struct ip_pseudo_hdr pseudo;
+    struct ip6_pseudo_hdr pseudo6;
     uint16_t psum;
     uint16_t total;
     char ep1[IP_ENDPOINT_STR_LEN];
     char ep2[IP_ENDPOINT_STR_LEN];
+    char ep3[IPV6_ENDPOINT_STR_LEN];
+    char ep4[IPV6_ENDPOINT_STR_LEN];
 
-    hdr = (struct tcp_hdr *)buf;
-    hdr->src = local->port;
-    hdr->dst = foreign->port;
-    hdr->seq = hton32(seq);
-    hdr->ack = hton32(ack);
-    hdr->off = (sizeof(*hdr) >> 2) << 4;
-    hdr->flg = flg;
-    hdr->wnd = hton16(wnd);
-    hdr->sum = 0;
-    hdr->up = 0;
-    memcpy(hdr + 1, data, len);
-    pseudo.src = local->addr.s_addr4;
-    pseudo.dst = foreign->addr.s_addr4;
-    pseudo.zero = 0;
-    pseudo.protocol = PROTOCOL_TCP;
-    total = sizeof(*hdr) + len;
-    pseudo.len = hton16(total);
-    psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
-    hdr->sum = cksum16((uint16_t *)hdr, total, psum);
-    debugf("%s => %s, len=%zu (payload=%zu)",
-        ip_endpoint_ntop(local, ep1, sizeof(ep1)), ip_endpoint_ntop(foreign, ep2, sizeof(ep2)), total, len);
-    tcp_dump((uint8_t *)hdr, total);
-    // case NET_IFACE_FAMILY_IP
-    if (ip_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr4, foreign->addr.s_addr4) == -1) {
-        return -1;
+    switch (local->addr.family) {
+    case AF_INET:
+        hdr = (struct tcp_hdr *)buf1;
+        hdr->src = local->port;
+        hdr->dst = foreign->port;
+        hdr->seq = hton32(seq);
+        hdr->ack = hton32(ack);
+        hdr->off = (sizeof(*hdr) >> 2) << 4;
+        hdr->flg = flg;
+        hdr->wnd = hton16(wnd);
+        hdr->sum = 0;
+        hdr->up = 0;
+        memcpy(hdr + 1, data, len);
+        pseudo.src = local->addr.s_addr4;
+        pseudo.dst = foreign->addr.s_addr4;
+        pseudo.zero = 0;
+        pseudo.protocol = PROTOCOL_TCP;
+        total = sizeof(*hdr) + len;
+        pseudo.len = hton16(total);
+        psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
+        hdr->sum = cksum16((uint16_t *)hdr, total, psum);
+        debugf("%s => %s, len=%zu (payload=%zu)",
+            ip_endpoint_ntop(local, ep1, sizeof(ep1)), ip_endpoint_ntop(foreign, ep2, sizeof(ep2)), total, len);
+        tcp_dump((uint8_t *)hdr, total);
+        if (ip_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr4, foreign->addr.s_addr4) == -1) {
+            return -1;
+        }
+        return len;
+    case AF_INET6:
+        hdr = (struct tcp_hdr *)buf2;
+        hdr->src = local->port;
+        hdr->dst = foreign->port;
+        hdr->seq = hton32(seq);
+        hdr->ack = hton32(ack);
+        hdr->off = (sizeof(*hdr) >> 2) << 4;
+        hdr->flg = flg;
+        hdr->wnd = hton16(wnd);
+        hdr->sum = 0;
+        hdr->up = 0;
+        memcpy(hdr + 1, data, len);
+        IPV6_ADDR_COPY(&pseudo6.src, &local->addr.s_addr6, IPV6_ADDR_LEN);
+        IPV6_ADDR_COPY(&pseudo6.dst, &foreign->addr.s_addr6, IPV6_ADDR_LEN);
+        pseudo6.zero[0] = pseudo6.zero[1] = pseudo6.zero[2] = 0;
+        pseudo6.nxt = PROTOCOL_TCP;
+        total = sizeof(*hdr) + len;
+        pseudo6.len = hton16(total);
+        psum = ~cksum16((uint16_t *)&pseudo6, sizeof(pseudo6), 0);
+        hdr->sum = cksum16((uint16_t *)hdr, total, psum);
+        debugf("%s => %s, len=%zu (payload=%zu)",
+            ip_endpoint_ntop(local, ep3, sizeof(ep3)), ip_endpoint_ntop(foreign, ep4, sizeof(ep4)), total, len);
+        tcp_dump((uint8_t *)hdr, total);
+        if (ip6_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr6, foreign->addr.s_addr6) == -1) {
+            return -1;
+        }
+        return len;
+
+    default:
+        break;
     }
-    return len;
+
+    return -1;
 }
 
 static ssize_t
@@ -719,9 +781,9 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
     hdr = (struct tcp_hdr *)data;
 
     tcp4_src.s_addr4 = src;
-    tcp4_src.family = NET_IFACE_FAMILY_IP;
+    tcp4_src.family = AF_INET;
     tcp4_dst.s_addr4 = dst;
-    tcp4_dst.family = NET_IFACE_FAMILY_IP;
+    tcp4_dst.family = AF_INET;
     /* verify checksum value */
     pseudo.src = src;
     pseudo.dst = dst;
@@ -785,9 +847,9 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     hdr = (struct tcp_hdr *)data;
 
     tcp6_src.s_addr6 = src;
-    tcp6_src.family = NET_IFACE_FAMILY_IPV6;
+    tcp6_src.family = AF_INET6;
     tcp6_dst.s_addr6 = dst;
-    tcp6_dst.family = NET_IFACE_FAMILY_IPV6;
+    tcp6_dst.family = AF_INET6;
 
     /* verify checksum value */
     pseudo.src = src;
@@ -1116,7 +1178,7 @@ int
 tcp_bind(int id, struct ip_endpoint *local)
 {
     struct tcp_pcb *pcb, *exist;
-    char ep[IP_ENDPOINT_STR_LEN];
+    char ep1[IPV6_ENDPOINT_STR_LEN];
 
     mutex_lock(&mutex);
     pcb = tcp_pcb_get(id);
@@ -1132,12 +1194,12 @@ tcp_bind(int id, struct ip_endpoint *local)
     }
     exist = tcp_pcb_select(local, NULL);
     if (exist) {
-        errorf("already bound, exist=%s", ip_endpoint_ntop(&exist->local, ep, sizeof(ep)));
+        errorf("already bound, exist=%s", ip_endpoint_ntop(&exist->local, ep1, sizeof(ep1)));
         mutex_unlock(&mutex);
         return -1;
     }
     pcb->local = *local;
-    debugf("success: local=%s", ip_endpoint_ntop(&pcb->local, ep, sizeof(ep)));
+    debugf("success: local=%s", ip_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)));
     mutex_unlock(&mutex);
     return 0;
 }
@@ -1162,7 +1224,7 @@ tcp_listen(int id, int backlog)
     pcb->state = TCP_PCB_STATE_LISTEN;
     (void)backlog; // TODO: set backlog
     mutex_unlock(&mutex);
-    return 0;
+    return 0; 
 }
 
 int
@@ -1220,6 +1282,7 @@ tcp_send(int id, uint8_t *data, size_t len)
     struct tcp_pcb *pcb;
     ssize_t sent = 0;
     struct ip_iface *iface;
+    struct ip6_iface *iface6;
     size_t mss, cap, slen;
 
     mutex_lock(&mutex);
@@ -1248,13 +1311,28 @@ RETRY:
         return -1;
     case TCP_PCB_STATE_ESTABLISHED:
     case TCP_PCB_STATE_CLOSE_WAIT:
-        iface = ip_route_get_iface(pcb->local.addr.s_addr4);
-        if (!iface) {
-            errorf("iface not found");
-            mutex_unlock(&mutex);
-            return -1;
+        switch (pcb->local.addr.family) {
+        case AF_INET:
+            iface = ip_route_get_iface(pcb->local.addr.s_addr4);
+            if (!iface) {
+                errorf("iface not found");
+                mutex_unlock(&mutex);
+                return -1;
+            }
+            mss = NET_IFACE(iface)->dev->mtu - (IP_HDR_SIZE_MIN + sizeof(struct tcp_hdr));
+            break;
+        case AF_INET6:
+            iface6 = ip6_route_get_iface(pcb->local.addr.s_addr6);
+            if (!iface6) {
+                errorf("iface6 not found");
+                mutex_unlock(&mutex);
+                return -1;
+            }
+            mss = NET_IFACE(iface6)->dev->mtu - (IPV6_HDR_SIZE + sizeof(struct tcp_hdr));
+            break;
+        default:
+            break;
         }
-        mss = NET_IFACE(iface)->dev->mtu - (IP_HDR_SIZE_MIN + sizeof(struct tcp_hdr));
         while (sent < (ssize_t)len) {
             cap = pcb->snd.wnd - (pcb->snd.nxt - pcb->snd.una);
             if (!cap) {

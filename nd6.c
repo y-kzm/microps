@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <sys/time.h>
 
 #include "platform.h"
@@ -26,14 +27,24 @@
 #define ND6_STATE_PROBE       5
 #define ND6_STATE_PERMANENT   6
 
+
+struct nd6_cache_ops {
+    int (*solicit)(); /* send ns */
+    int (*connected)();
+    int (*output)();
+    int (*err)();
+};
+
 struct nd6_cache {
+    struct net_device *dev;
     uint8_t state; 
     ip6_addr_t ip6addr;
-    uint8_t lladdr[ETHER_ADDR_LEN];
-    int isrouter; /* typedef int bool */
+    uint8_t lladdr[ETHER_ADDR_LEN]; /* link layer address */
+    bool isrouter;
     struct timeval timestamp;
-    struct net_device *dev;
     time_t timeout;
+    struct nd6_cache_ops *ops;
+    // queue;
 };
 
 static mutex_t mutex = MUTEX_INITIALIZER;
@@ -72,7 +83,7 @@ nd6_cache_dump(FILE *fp)
     char addr2[ETHER_ADDR_STR_LEN];
 
     flockfile(fp);
-    fprintf(fp, "+---------------------------------------------------------------------------+\n");
+    fprintf(fp, "=============================================================================\n");
     for (entry = caches; entry < tailof(caches); entry++) {
         if (entry->state != ND6_STATE_NONE){
             fprintf(fp, " %s lladdr %s state %s ", 
@@ -85,7 +96,6 @@ nd6_cache_dump(FILE *fp)
             fprintf(fp, "\n");
         }
     }
-    fprintf(fp, "+---------------------------------------------------------------------------+\n");
     funlockfile(fp);
 }
 
@@ -260,7 +270,7 @@ nd6_cache_insert(ip6_addr_t ip6addr, const uint8_t *lladdr, struct net_iface *if
         return NULL;
     }
     cache->state = ND6_STATE_STALE;
-    cache->ip6addr = ip6addr;
+    IPV6_ADDR_COPY(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
     memcpy(cache->lladdr, lladdr, ETHER_ADDR_LEN);
     gettimeofday(&cache->timestamp, NULL);
     cache->dev = iface->dev;
@@ -301,7 +311,7 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
         return ND6_RESOLVE_ERROR;
     }
 #ifdef NDCACHEDUMP
-        nd6_cache_dump(stderr);
+    nd6_cache_dump(stderr);
 #endif
     
     mutex_lock(&mutex);
@@ -388,7 +398,8 @@ nd6_rs_output(struct ip6_iface *iface)
     msg_len = sizeof(*rs);
 
     /* calculate the checksum */
-    pseudo.src = iface->ip6_addr.addr;
+    memset(&pseudo, 0, sizeof(struct ip6_pseudo_hdr));
+    IPV6_ADDR_COPY(&pseudo.src, &iface->ip6_addr.addr, IPV6_ADDR_LEN);
     IPV6_ADDR_COPY(&pseudo.dst, &IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR, IPV6_ADDR_LEN);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
@@ -510,7 +521,7 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
             if (memcmp(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN / 8) == 0) {
                 flags |= ND6_NA_FLAG_SOLICITED;
             } 
-        }else {
+        } else {
             errorf("bad dstination addr: %s", ip6_addr_ntop(dst, addr1, sizeof(addr1)));
             return;
         }
@@ -577,7 +588,7 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     ns->nd_ns_code = 0;
     ns->nd_ns_sum = 0;
     ns->nd_ns_reserved = 0;
-    ns->target = target;
+    IPV6_ADDR_COPY(&ns->target, &target, IPV6_ADDR_LEN);
 
     /* possible options */
     /* source link-layer address */
@@ -589,7 +600,8 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     msg_len = sizeof(*ns) + sizeof(*opt) + sizeof(*opt_lladdr); 
 
     /* calculate the checksum */
-    pseudo.src = iface->ip6_addr.addr;
+    memset(&pseudo, 0, sizeof(struct ip6_pseudo_hdr));
+    IPV6_ADDR_COPY(&pseudo.src, &iface->ip6_addr.addr, IPV6_ADDR_LEN);
     ip6_addr_create_solicit_mcastaddr(target, &pseudo.dst);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
@@ -698,7 +710,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     na->nd_na_code = 0;
     na->nd_na_sum = 0;
     na->nd_na_flg = hton32(flags);
-    na->target = target;
+    IPV6_ADDR_COPY(&na->target, &target, IPV6_ADDR_LEN);
 
     /* possible options */
     opt = (struct nd_opt_hdr *)(na + 1);
@@ -710,8 +722,9 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     memcpy(buf + msg_len, data, len);
 
     /* calculate the checksum */
-    pseudo.src = src;
-    pseudo.dst = dst;
+    memset(&pseudo, 0, sizeof(struct ip6_pseudo_hdr));
+    IPV6_ADDR_COPY(&pseudo.src, &src, IPV6_ADDR_LEN);
+    IPV6_ADDR_COPY(&pseudo.dst, &dst, IPV6_ADDR_LEN);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = PROTOCOL_ICMPV6;
@@ -725,7 +738,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
 #ifdef HDRDUMP
     icmp6_dump((uint8_t *)na, msg_len);
 #endif
-    return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, src, dst);
+    return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, res->ip6_addr.addr, dst);
 }
 
 /*

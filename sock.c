@@ -249,6 +249,10 @@ sock_bind(int id, const struct sockaddr *addr, int addrlen)
             ep.port = ((struct sockaddr_in *)addr)->sin_port;
             return tcp_bind(s->desc, &ep);
         case AF_INET6:
+            ep.addr.s_addr6 = ((struct sockaddr_in6 *)addr)->sin6_addr;
+            ep.addr.family = AF_INET6;
+            ep.port = ((struct sockaddr_in6 *)addr)->sin6_port;
+            return tcp_bind(s->desc, &ep);
         default:
             errorf("not supported address family");
             break;
@@ -291,7 +295,7 @@ sock_listen(int id, int backlog)
     case AF_INET:
         return tcp_listen(s->desc, backlog);
     case AF_INET6:
-        break;
+        return tcp_listen(s->desc, backlog);
     default:
         errorf("not supported address family");
         break;
@@ -328,6 +332,18 @@ sock_accept(int id, struct sockaddr *addr, int *addrlen)
         new_s->desc = ret;
         return indexof(socks, new_s);
     case AF_INET6:
+        ret = tcp_accept(s->desc, &ep);
+        if (ret == -1) {
+            return -1;
+        }
+        ((struct sockaddr_in6 *)addr)->sin6_family = AF_INET6;
+        ((struct sockaddr_in6 *)addr)->sin6_addr = ep.addr.s_addr6;
+        ((struct sockaddr_in6 *)addr)->sin6_port = ep.port;
+        new_s = sock_alloc();
+        new_s->family = s->family;
+        new_s->type = s->type;
+        new_s->desc = ret;
+        return indexof(socks, new_s);
     default:
         errorf("not supported address family");
         break;
@@ -351,9 +367,14 @@ sock_connect(int id, const struct sockaddr *addr, int addrlen)
     switch (s->family) {
     case AF_INET:
         ep.addr.s_addr4 = ((struct sockaddr_in *)addr)->sin_addr;
+        ep.addr.family = AF_INET;
         ep.port = ((struct sockaddr_in *)addr)->sin_port;
         return tcp_connect(s->desc, &ep);
     case AF_INET6:
+        ep.addr.s_addr6 = ((struct sockaddr_in6 *)addr)->sin6_addr;
+        ep.addr.family = AF_INET6;
+        ep.port = ((struct sockaddr_in6 *)addr)->sin6_port;
+        return tcp_connect(s->desc, &ep);
     default:
         errorf("not supported address family");
         break;
@@ -377,6 +398,7 @@ sock_recv(int id, void *buf, size_t n)
     case AF_INET:
         return tcp_receive(s->desc, (uint8_t *)buf, n);
     case AF_INET6:
+        return tcp_receive(s->desc, (uint8_t *)buf, n);
     default:
         errorf("not supported address family");
         break;
@@ -400,6 +422,7 @@ sock_send(int id, const void *buf, size_t n)
     case AF_INET:
         return tcp_send(s->desc, (uint8_t *)buf, n);
     case AF_INET6:
+        return tcp_send(s->desc, (uint8_t *)buf, n);
     default:
         errorf("not supported address family");
         break;

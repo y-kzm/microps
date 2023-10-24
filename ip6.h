@@ -26,7 +26,7 @@
 
 /* macros for address checking */
 #define IPV6_ADDR_EQUAL(addr1, addr2) (memcmp((addr1)->addr8, (addr2)->addr8, IPV6_ADDR_LEN) == 0)
-#define IPV6_ADDR_COPY(addr1, addr2, prefixlen) (memcpy((addr1)->addr8, (addr2)->addr8, prefixlen))
+#define IPV6_ADDR_COPY(addr1, addr2, size) (memcpy((addr1)->addr8, (addr2)->addr8, size))
 #define IPV6_ADDR_MASK(addr1, addr2, masked)  {                          \
         (masked)->addr32[0] = (addr1)->addr32[0] & (addr2)->addr32[0]; \
         (masked)->addr32[1] = (addr1)->addr32[1] & (addr2)->addr32[1]; \
@@ -118,7 +118,7 @@ extern const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX;
 
 #define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN     104
 #define IPV6_MULTICAST_ADDR_PREFIX_LEN          8
-#define IPV6_LINK_LOCAL_ADDR_PREFIX_LEN         10
+#define IPV6_LINK_LOCAL_ADDR_PREFIX_LEN         64
 
 extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);
@@ -127,7 +127,7 @@ ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
 extern void 
 ip6_addr_create_solicit_mcastaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
 extern void
-ip6_addr_create_globaladdr(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
+ip6_addr_create_global(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
 
 extern struct ip6_iface *
 ip6_rule_addr_select(const ip6_addr_t dst);
