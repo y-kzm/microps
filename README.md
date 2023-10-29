@@ -30,8 +30,11 @@ Protocols
 
 - [x] Ethernet
 - [x] ARP
+- [x] NDP
 - [x] IP
+- [x] IPv6
 - [x] ICMP
+- [x] ICMPv6
 - [x] UDP
 - [x] TCP
 
@@ -167,6 +170,7 @@ $ make
 ```
 $ sudo ip tuntap add mode tap user $USER name tap0
 $ sudo ip addr add 192.0.2.1/24 dev tap0
+$ ip -6 addr add 2001:db8::1/64 dev tap0
 $ sudo ip link set tap0 up
 ```
 
@@ -182,6 +186,17 @@ $ ./app/tcps.exe 7
 ...
 11:48:55.884 [D] net_run: running... (net.c:324)
 11:48:55.884 [D] tcp_bind: success: addr=0.0.0.0, port=7 (tcp.c:1156)
+```
+
+```
+$ ./test/tcp6s.exe 7 
+14:11:37.358 [I] net_protocol_register : registered, type=ARP(0x0806) (net.c:232)
+14:11:37.358 [I] net_timer_register    : registered: ARP Timer interval={1, 0} (net.c:289)
+14:11:37.358 [I] net_protocol_register : registered, type=IP(0x0800) (net.c:232)
+14:11:37.358 [I] net_protocol_register : registered, type=IPV6(0x86dd) (net.c:232)
+...
+14:11:37.373 [D] net_run               : running... (net.c:359)
+14:11:37.373 [D] tcp_bind              : success: local=[::]:7 (tcp.c:1222)
 ```
 
 > TCP Echo Server start on port 7. (default address is 192.0.2.2/24)
@@ -206,6 +221,26 @@ foo
 foo
 bar
 bar
+```
+
++ Ping6
+
+```
+$ ping 192.0.2.2
+PING 2001:db8::2(2001:db8::2) 56 data bytes
+64 bytes from 2001:db8::2: icmp_seq=1 ttl=255 time=0.990 ms
+64 bytes from 2001:db8::2: icmp_seq=2 ttl=255 time=0.352 ms
+64 bytes from 2001:db8::2: icmp_seq=3 ttl=255 time=0.684 ms
+...
+```
+
++ TCP communication over IPv6
+```
+$ nc -6 2001:db8::2 7 
+hoge
+hoge
+fuga
+fuga
 ```
 
 > Sending text will be sent back by the Echo Server.
