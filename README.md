@@ -226,7 +226,7 @@ bar
 + Ping6
 
 ```
-$ ping 192.0.2.2
+$ ping6 2001:db8::2
 PING 2001:db8::2(2001:db8::2) 56 data bytes
 64 bytes from 2001:db8::2: icmp_seq=1 ttl=255 time=0.990 ms
 64 bytes from 2001:db8::2: icmp_seq=2 ttl=255 time=0.352 ms
