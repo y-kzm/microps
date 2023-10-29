@@ -8,6 +8,10 @@
 
 #include "net.h"
 
+#define SLAAC_DISABLE   0
+#define SLAAC_ENABLE    1
+#define SLAAC_DONE      2
+
 extern void
 slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
 extern int

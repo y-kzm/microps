@@ -345,8 +345,9 @@ udp6_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *da
     memcpy(hdr + 1, data, len);
 
     /* calculate checksum value */
-    pseudo.src = src->addr.s_addr6;
-    pseudo.dst = dst->addr.s_addr6;
+    memset(&pseudo, 0, sizeof(struct ip6_pseudo_hdr));
+    IPV6_ADDR_COPY(&pseudo.src, &src->addr.s_addr6, IPV6_ADDR_LEN);
+    IPV6_ADDR_COPY(&pseudo.dst, &dst->addr.s_addr6, IPV6_ADDR_LEN);
     pseudo.len = hton16(total);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = PROTOCOL_UDP;
@@ -510,6 +511,7 @@ udp_sendto(int id, uint8_t *data, size_t len, struct ip_endpoint *foreign)
         return udp_output(&local, foreign, data, len);
     case AF_INET6:
         if (IPV6_ADDR_EQUAL(&local.addr.s_addr6, &IPV6_UNSPECIFIED_ADDR)) {
+            // TODO: ソースアドレス選択
             iface6 = ip6_route_get_iface(foreign->addr.s_addr6);
             if (!iface6) {
                 errorf("iface not found that can reach foreign address, addr=%s",

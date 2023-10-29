@@ -9,6 +9,7 @@
 #include "ether.h"
 #include "ip6.h"
 #include "nd6.h"
+#include "slaac.h"
 
 /*
  * Utils
@@ -32,7 +33,6 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
 {
     struct nd_router_adv *ra;
     struct nd_opt_prefixinfo *opt_pi;
-
     struct ip6_iface *slaac_iface;
     ip6_addr_t ip6addr;
     char addr[IPV6_ADDR_STR_LEN];
@@ -47,7 +47,7 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
         return;
     }
 
-    // TODO: DAD & Set Default Route
+    // TODO: DAD & デフォルトルートを設定
 
     if (ip6_route_set_multicast(slaac_iface) != 0) {
         errorf("ip6_route_set_multicast() failure");
@@ -59,7 +59,9 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
     }
 
     /* done */
-    iface->slaac.running = 0;
+    infof("created, global address by slaac=%s, dev=%s", 
+        ip6_addr_ntop(slaac_iface->ip6_addr.addr, addr, sizeof(addr)), slaac_iface->iface.dev->name);
+    iface->slaac.state = SLAAC_DONE;
 }
 
 static int
@@ -74,7 +76,11 @@ slaac_rs_output(struct ip6_iface *iface) {
 int
 slaac_run(struct ip6_iface *iface)
 {
-    infof("start SLAAC");
+    if (iface->slaac.state == SLAAC_DISABLE) { 
+        infof("SLAAC is disabled on %s", iface->iface.dev->name);
+        return -1;
+    }
+    infof("start, SLAAC, dev=%s", iface->iface.dev->name);
     return slaac_rs_output(iface);
 }
 

@@ -45,6 +45,11 @@ static struct net_protocol *protocols;
 static struct net_timer *timers;
 static struct net_event *events;
 
+static struct ip6_iface*
+net_ip6_init(struct net_device *dev);
+static int
+net_slaac_init();
+
 struct net_device *
 net_device_alloc(void (*setup)(struct net_device *dev))
 {
@@ -90,6 +95,10 @@ net_device_open(struct net_device *dev)
     }
     dev->flags |= NET_DEVICE_FLAG_UP;
     infof("dev=%s, state=%s", dev->name, NET_DEVICE_STATE(dev));
+    /* IPv6 Enable: created link-local address */
+    if (dev->type != NET_DEVICE_TYPE_LOOPBACK) {
+        net_slaac_init(net_ip6_init(dev));
+    }
     return 0;
 }
 
@@ -371,6 +380,32 @@ net_shutdown(void)
 #include "nd6.h"
 #include "udp.h"
 #include "tcp.h"
+#include "slaac.h"
+
+static struct ip6_iface*
+net_ip6_init(struct net_device *dev)
+{
+    struct ip6_iface *iface;
+
+    iface = ip6_device_init(dev);
+    if (iface == NULL){
+        errorf("net_ip6_init() failure");
+        return NULL;
+    }
+
+    return iface;
+}
+
+static int
+net_slaac_init(struct ip6_iface *iface)
+{
+    if (slaac_run(iface) < 0 || iface == NULL) {
+        errorf("net_slaac_init() failure");
+        return -1; 
+    }
+
+    return 0;
+}
 
 int
 net_init(void)

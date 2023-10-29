@@ -112,4 +112,7 @@ net_shutdown(void);
 extern int
 net_init(void);
 
+extern int 
+net_check_run();
+
 #endif

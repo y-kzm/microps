@@ -128,7 +128,7 @@ tcp_pcb_release(struct tcp_pcb *pcb)
         tcp_pcb_release(est);
     }
     debugf("released, local=%s, foreign=%s",
-        ip_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)), ip_endpoint_ntop(&pcb->foreign, ep2, sizeof(ep2)));
+        ip_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)), ip_endpoint_ntop(&pcb->foreign, ep2, sizeof(ep2))); // TODO: foreignにfamily情報が格納されていない
     memset(pcb, 0, sizeof(*pcb));
 }
 
@@ -296,7 +296,7 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
     char ep3[IPV6_ENDPOINT_STR_LEN];
     char ep4[IPV6_ENDPOINT_STR_LEN];
 
-    switch (local->addr.family) {
+    switch (foreign->addr.family) {
     case AF_INET:
         hdr = (struct tcp_hdr *)buf1;
         hdr->src = local->port;
@@ -351,8 +351,8 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
             return -1;
         }
         return len;
-
     default:
+        errorf("not supported address family");
         break;
     }
 
@@ -771,7 +771,6 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
     char addr2[IP_ADDR_STR_LEN];
     struct ip_endpoint local, foreign;
     struct tcp_segment_info seg;
-    // TODO: 
     ip_addr_storage tcp4_src, tcp4_dst;
 
     if (len < sizeof(*hdr)) {
@@ -837,7 +836,6 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     char addr2[IPV6_ADDR_STR_LEN];
     struct ip_endpoint local, foreign;
     struct tcp_segment_info seg;
-    // TODO: 
     ip_addr_storage tcp6_src, tcp6_dst;
 
     if (len < sizeof(*hdr)) {
@@ -1087,7 +1085,9 @@ tcp_connect(int id, struct ip_endpoint *foreign)
     struct tcp_pcb *pcb;
     struct ip_endpoint local;
     struct ip_iface *iface;
-    char addr[IP_ADDR_STR_LEN];
+    struct ip6_iface *iface6;
+    char addr1[IP_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
     int p;
     int state;
 
@@ -1105,15 +1105,35 @@ tcp_connect(int id, struct ip_endpoint *foreign)
     }
     local.addr = pcb->local.addr;
     local.port = pcb->local.port;
-    if (local.addr.s_addr4 == IP_ADDR_ANY) {
-        iface = ip_route_get_iface(foreign->addr.s_addr4);
-        if (!iface) {
-            errorf("ip_route_get_iface() failure");
-            mutex_unlock(&mutex);
-            return -1;
+    switch (foreign->addr.family) {
+    case AF_INET:
+        if (local.addr.s_addr4 == IP_ADDR_ANY) {
+            iface = ip_route_get_iface(foreign->addr.s_addr4);
+            if (!iface) {
+                errorf("ip_route_get_iface() failure");
+                mutex_unlock(&mutex);
+                return -1;
+            }
+            debugf("select source address: %s", ip_addr_ntop(iface->unicast, addr1, sizeof(addr1)));
+            local.addr.s_addr4 = iface->unicast;
         }
-        debugf("select source address: %s", ip_addr_ntop(iface->unicast, addr, sizeof(addr)));
-        local.addr.s_addr4 = iface->unicast;
+        break;
+    case AF_INET6:
+        if (IPV6_ADDR_EQUAL(&local.addr.s_addr6, &IPV6_UNSPECIFIED_ADDR)) {
+            // TODO: ソースアドレス選択
+            iface6 = ip6_route_get_iface(foreign->addr.s_addr6);
+            if (!iface6) {
+                errorf("ip6_route_get_iface() failure");
+                mutex_unlock(&mutex);
+                return -1;
+            }
+            debugf("select source address: %s", ip6_addr_ntop(iface6->ip6_addr.addr, addr2, sizeof(addr2)));
+            IPV6_ADDR_COPY(&local.addr.s_addr6, &iface6->ip6_addr.addr, IPV6_ADDR_LEN);
+        }
+        break;
+    default:
+        errorf("not supported address family");
+        return -1;
     }
     if (!local.port) {
         for (p = TCP_SOURCE_PORT_MIN; p <= TCP_SOURCE_PORT_MAX; p++) {

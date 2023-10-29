@@ -11,6 +11,7 @@
 #include "net.h"
 #include "ip.h"
 #include "ip6.h"
+#include "slaac.h"
 #include "tcp.h"
 #include "sock.h"
 
@@ -45,7 +46,7 @@ setup(void)
         errorf("loopback_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
+    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, SLAAC_DISABLE);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -59,7 +60,7 @@ setup(void)
         errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
+    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, SLAAC_DISABLE);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;
@@ -70,10 +71,6 @@ setup(void)
     }
     if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
-        return -1;
-    }
-    if ((ip6_iface_init(dev)) == NULL){
-        errorf("ip6_iface_init() failure");
         return -1;
     }
     if (net_run() == -1) {

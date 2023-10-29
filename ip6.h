@@ -73,8 +73,8 @@ struct ip6_iface {
     struct net_iface iface;
     struct ip6_iface *next; /* unicast */
     struct {
-        int running;
-        int rdns;
+        uint8_t state;
+        uint8_t rdns; /* define only */
     } slaac;  /* SLAAC context */
     struct {
         ip6_addr_t addr;
@@ -143,7 +143,7 @@ extern struct ip6_iface *
 ip6_route_get_iface(ip6_addr_t dst);
 
 extern struct ip6_iface *
-ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int enable);
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac_flgs);
 extern int
 ip6_iface_register(struct net_device *dev, struct ip6_iface *iface);
 extern struct ip6_iface *
@@ -155,7 +155,7 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
 extern int
 ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface));
 extern struct ip6_iface *
-ip6_iface_init(struct net_device *dev);
+ip6_device_init(struct net_device *dev);
 
 extern int
 ip6_init(void);

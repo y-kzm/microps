@@ -10,6 +10,7 @@
 #include "net.h"
 #include "ip.h"
 #include "ip6.h"
+#include "slaac.h"
 #include "udp.h"
 #include "sock.h"
 
@@ -70,10 +71,6 @@ setup(void)
     }
     if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
-        return -1;
-    }
-    if ((ip6_iface_init(dev)) == NULL){
-        errorf("ip6_iface_init() failure");
         return -1;
     }
     if (net_run() == -1) {

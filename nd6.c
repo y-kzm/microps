@@ -327,7 +327,7 @@ nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr)
         cache->state = ND6_STATE_INCOMPLETE;
         IPV6_ADDR_COPY(&cache->ip6addr, &ip6addr, IPV6_ADDR_LEN);
         gettimeofday(&cache->timestamp, NULL);
-        // TODO: start retrans timer
+        // TODO: 再送タイマー　
         nd6_ns_output(iface, ip6addr);
         mutex_unlock(&mutex);
         debugf("cache not found, ip6addr=%s", ip6_addr_ntop(ip6addr, addr1, sizeof(addr1)));
@@ -441,7 +441,7 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     ra = (struct nd_router_adv *)data;
     if (ND6_RA_FLG_ISSET(ra->nd_ra_flg, ND6_RA_FLG_MGMT)) {
         debugf("use stateful DHCPv6 to configure addresses");
-        iface->slaac.running = 0;
+        iface->slaac.state = SLAAC_DISABLE;
     }
     if (ND6_RA_FLG_ISSET(ra->nd_ra_flg, ND6_RA_FLG_OTHER)) {
         warnf("use stateful DHCPv6 to obtain non-address information");
@@ -475,20 +475,20 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     if (opt_pi != NULL) {
         if (!ND6_RA_PI_FLG_ISSET(opt_pi->flg, ND6_RA_PI_FLG_LINK)) {
             warnf("Advertised prefix is not On-link: This case is not yet supported");
-            iface->slaac.running = 0;
+            iface->slaac.state = SLAAC_DISABLE;
         }
         if (!ND6_RA_PI_FLG_ISSET(opt_pi->flg, ND6_RA_PI_FLG_AUTO)) {
             warnf("Autonomous address-configuration is disabled");
-            iface->slaac.running = 0;
+            iface->slaac.state = SLAAC_DISABLE;
         }
-        // TODO: print prefix info
+        // TODO: Prefix情報の出力
     }
     
     debugf("%s => %s, type=(%u), len=%zu",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         ra->nd_ra_type, len);
-    if (iface->slaac.running) {
+    if (iface->slaac.state != SLAAC_DONE && iface->slaac.state != SLAAC_ENABLE) {
         slaac_ra_input(data, len, src, dst, iface);
     }
 }
@@ -508,6 +508,7 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
     char lladdr[ETHER_ADDR_STR_LEN];
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
+    char addr3[IPV6_ADDR_STR_LEN];
 
     if (len < sizeof(*ns)) {
         errorf("too short");
@@ -525,13 +526,15 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
             errorf("bad dstination addr: %s", ip6_addr_ntop(dst, addr1, sizeof(addr1)));
             return;
         }
+    } else {
+        flags |= ND6_NA_FLAG_SOLICITED;
     }
     if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &src)) {
         errorf("duplicate ipv6 address: %s", ip6_addr_ntop(src, addr1, sizeof(addr1)));
         return;
     }
     if (IPV6_ADDR_IS_UNSPECIFIED(&src)) {
-        // TODO: received dad
+        // TODO: DADの受信処理
     }
     if (IPV6_ADDR_IS_MULTICAST(&ns->target)) {
         errorf("bad target addr: %s", ip6_addr_ntop(ns->target, addr1, sizeof(addr1)));
@@ -561,9 +564,10 @@ nd6_ns_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         }
     }
 
-    debugf("%s => %s, type=(%u), len=%zu ",
+    debugf("%s => %s, iface=%s, type=(%u), len=%zu ",
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
+        ip6_addr_ntop(iface->ip6_addr.addr, addr3, sizeof(addr3)),
         ns->nd_ns_type, len);
     
     nd6_na_output(ICMPV6_TYPE_NEIGHBOR_ADV, ns->nd_ns_code, flags, (uint8_t *)(opt + 1), len - (sizeof(*ns) + sizeof(*opt)), iface->ip6_addr.addr, src, ns->target, NET_IFACE(iface)->dev->addr);
@@ -691,7 +695,9 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
+    // TODO: ソースアドレス選択の実行タイミング
     /* select source address */
+    /*
     struct ip6_iface *res;
 
     res = ip6_rule_addr_select(dst);
@@ -703,6 +709,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
         warnf("no appropriate source address");
         return -1;
     }
+    */
 
     /* neighbor advertisement message */
     na = (struct nd_neighbor_adv *)buf;
@@ -738,7 +745,8 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
 #ifdef HDRDUMP
     icmp6_dump((uint8_t *)na, msg_len);
 #endif
-    return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, res->ip6_addr.addr, dst);
+    //return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, res->ip6_addr.addr, dst);
+    return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, src, dst);
 }
 
 /*

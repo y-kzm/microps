@@ -12,6 +12,7 @@
 #include "ip6.h"
 #include "icmp6.h"
 #include "nd6.h"
+#include "slaac.h"
 
 struct ip6_protocol {
     struct ip6_protocol *next;
@@ -25,8 +26,7 @@ struct ip6_route {
     ip6_addr_t network;
     ip6_addr_t netmask;
     ip6_addr_t nexthop;
-    struct ip6_iface *iface; // TODO?: physical interface
-    //struct net_device *device;
+    struct ip6_iface *iface;
 };
 
 static struct ip6_iface *ifaces;
@@ -510,7 +510,7 @@ ip6_route_get_iface(ip6_addr_t dst)
  */
 
 struct ip6_iface *
-ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int enable)
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int slaac_flgs)
 {
     struct ip6_iface *iface;
 
@@ -528,7 +528,7 @@ ip6_iface_alloc(const char *addr, const uint8_t prefixlen, int enable)
     iface->ip6_addr.prefixlen = prefixlen;
     ip6_addr_prefixlen_to_netmask(prefixlen, &iface->ip6_addr.netmask);
     iface->ip6_addr.scope = ip6_addr_get_scope(&iface->ip6_addr.addr);
-    iface->slaac.running = enable;
+    iface->slaac.state = slaac_flgs;
 
     return iface;
 }
@@ -665,12 +665,19 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 
     /* unicast check */
     /* find an interface which has IPv6 address that matches the destination address  */
+    ip6_addr_t mcaaddr;
     for (entry = dev->ifaces; entry; entry = entry->next) {
         if (entry->family == NET_IFACE_FAMILY_IPV6) {
             iface = (struct ip6_iface *)entry;
             if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &hdr->ip6_dst)) {
                 /* Recognize as the packet addressed to our */
                 break;
+            }
+            if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst)) {
+                ip6_addr_create_solicit_mcastaddr(iface->ip6_addr.addr, &mcaaddr);
+                if (IPV6_ADDR_EQUAL(&mcaaddr, &hdr->ip6_dst)) {
+                    break;
+                }
             }
         }
     }
@@ -710,7 +717,6 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
         if (IPV6_ADDR_IS_MULTICAST(&dst)) {
             ip6_addr_mcastaddr_to_hwaddr(dst, hwaddr);
         } else {
-            //ret = nd6_resolve(ip6_iface_select_linklocal(), dst, hwaddr);
             ret = nd6_resolve(iface, dst, hwaddr);
             // TODO: 解決できなかったときにdataをキューで保持
             if (ret != 1) {
@@ -729,10 +735,9 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     struct ip6_hdr *hdr;
     uint16_t plen;
     char addr1[IPV6_ADDR_STR_LEN];
-    char addr2[IPV6_ADDR_STR_LEN];
 
     hdr = (struct ip6_hdr *)buf;
-    hdr->ip6_flow = 0x0000;
+    hdr->ip6_flow = 0x0000;     // TODO: FlowLabelの生成: ポート番号はどうやって参照する？ 上位層がICMPの場合はどうする？
     hdr->ip6_vfc = (IP_VERSION_IPV6 << 4);
     plen = len;
     hdr->ip6_plen = hton16(plen);
@@ -742,8 +747,7 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     IPV6_ADDR_COPY(&hdr->ip6_dst, &dst, IPV6_ADDR_LEN);
     memcpy(hdr + 1, data, len);  
     debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
-        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)), 
-        ip6_addr_ntop(nexthop, addr2, sizeof(addr2)), len, sizeof*hdr);
+        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)), len, sizeof(*hdr));
 #ifdef HDRDUMP
     ip6_dump(buf, sizeof(*hdr));
 #endif
@@ -774,23 +778,10 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
         errorf("no route to host, addr=%s", ip6_addr_ntop(dst, addr, sizeof(addr)));
         return -1;
     }
-    if (!IPV6_ADDR_IS_MULTICAST(&dst)) {
-        //TODO: net_deviceで判断するべき？ 論理interfaceにしてしまうとIPアドレスが変更されてしまう
-        iface = route->iface;
-    }
 
-    warnf("[!!!!! DEBUG !!!!!] iface address       = %s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)));  // TODO: remove
-    warnf("[!!!!! DEBUG !!!!!] source address      = %s", ip6_addr_ntop(src, addr, sizeof(addr)));  // TODO: remove
-    warnf("[!!!!! DEBUG !!!!!] destination address = %s", ip6_addr_ntop(dst, addr, sizeof(addr)));  // TODO: remove
-    /**
-     * microps      Linux
-     *   GUA-m <--- LLA-l
-     * (source address selection: LLA-m)
-     *   LLA-m ---> LLA-l
-     * (xxxxxxx)
-     *   GUA-m ---> LLA-l
-     * (ooooooo)
-     */
+    //warnf("[!!!!! DEBUG !!!!!] iface address       = %s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)));  
+    //warnf("[!!!!! DEBUG !!!!!] source address      = %s", ip6_addr_ntop(src, addr, sizeof(addr)));  
+    //warnf("[!!!!! DEBUG !!!!!] destination address = %s", ip6_addr_ntop(dst, addr, sizeof(addr))); 
     if (!IPV6_ADDR_EQUAL(&src, &iface->ip6_addr.addr)) {
         errorf("unable to output with specified source address, addr=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
         return -1;
@@ -838,16 +829,16 @@ ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint
     return 0;    
 }
 
-/* IPv6 Link-Loca Address iface: Initial Register*/
+/* IPv6 Link-Local Address iface: Initial Register*/
 struct ip6_iface *
-ip6_iface_init(struct net_device *dev)
+ip6_device_init(struct net_device *dev)
 {
     struct ip6_iface *iface;
     ip6_addr_t ip6addr;
     char addr[IPV6_ADDR_STR_LEN];
 
     ip6_addr_create_linklocal(dev->addr, &ip6addr);
-    iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), IPV6_LINK_LOCAL_ADDR_PREFIX_LEN, 1);
+    iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), IPV6_LINK_LOCAL_ADDR_PREFIX_LEN, SLAAC_ENABLE);
     if (ip6_iface_register(dev, iface) == -1) {
         errorf("ip6_iface_register() failure");
         return NULL;
@@ -857,7 +848,7 @@ ip6_iface_init(struct net_device *dev)
         return NULL;
     }
     
-    debugf("created Link-Local Address %s on interface %s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), dev->name);
+    infof("created, link-local address=%s, dev=%s", ip6_addr_ntop(iface->ip6_addr.addr, addr, sizeof(addr)), dev->name);
     return iface;
 }
 
