@@ -65,6 +65,35 @@ ether_addr_ntop(const uint8_t *n, char *p, size_t size)
     return p;
 }
 
+/* Brief: ipv6 addr to mac addr */
+static int
+ether_addr_create_mcastaddr(const uint8_t *hwaddr)
+{
+    if (hwaddr[0] == 0x33 && hwaddr[1] == 0x33) {
+        return 0;
+    }
+    return -1;
+}
+
+void
+ether_addr_create_eui64(const uint8_t *hwaddr, uint8_t *eui64)
+{
+    eui64[0] = hwaddr[0];
+    eui64[1] = hwaddr[1];
+    eui64[2] = hwaddr[2];
+
+    eui64[3] = 0xff;
+    eui64[4] = 0xff;
+
+    eui64[5] = hwaddr[3];
+    eui64[6] = hwaddr[4];
+    eui64[7] = hwaddr[5];
+
+    /* invert the 7th bit */
+    eui64[0] ^= 0x02;
+}
+
+#ifdef HDRDUMP
 static void
 ether_dump(const uint8_t *frame, size_t flen)
 {
@@ -81,6 +110,7 @@ ether_dump(const uint8_t *frame, size_t flen)
 #endif
     funlockfile(stderr);
 }
+#endif
 
 int
 ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst, ssize_t (*callback)(struct net_device *dev, const uint8_t *data, size_t len))
@@ -88,6 +118,8 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
     uint8_t frame[ETHER_FRAME_SIZE_MAX] = {};
     struct ether_hdr *hdr;
     size_t flen, pad = 0;
+    char addr1[ETHER_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
 
     hdr = (struct ether_hdr *)frame;
     memcpy(hdr->dst, dst, ETHER_ADDR_LEN);
@@ -98,8 +130,13 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
         pad = ETHER_PAYLOAD_SIZE_MIN - len;
     }
     flen = sizeof(*hdr) + len + pad;
-    debugf("dev=%s, type=%s(0x%04x), len=%zu", dev->name, ether_type_ntoa(hdr->type), type, flen);
+    debugf("%s => %s, dev=%s, type=%s(0x%04x), len=%zu",
+        ether_addr_ntop(hdr->src, addr1, sizeof(addr1)), 
+        ether_addr_ntop(hdr->dst, addr2, sizeof(addr2)), dev->name, 
+        ether_type_ntoa(hdr->type), type, flen);
+#ifdef HDRDUMP
     ether_dump(frame, flen);
+#endif
     return callback(dev, frame, flen) == (ssize_t)flen ? 0 : -1;
 }
 
@@ -110,6 +147,8 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     ssize_t flen;
     struct ether_hdr *hdr;
     uint16_t type;
+    char addr1[ETHER_ADDR_STR_LEN];
+    char addr2[ETHER_ADDR_STR_LEN];
 
     flen = callback(dev, frame, sizeof(frame));
     if (flen < (ssize_t)sizeof(*hdr)) {
@@ -119,13 +158,21 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     hdr = (struct ether_hdr *)frame;
     if (memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0) {
         if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
-            /* for other host */
-            return -1;
+            if (ether_addr_create_mcastaddr(hdr->dst) != 0) {
+                /* for other host */
+                debugf("for other host %s", ether_addr_ntop(hdr->dst, addr1, sizeof(addr1)));
+                return -1;
+            }
         }
     }
     type = ntoh16(hdr->type);
-    debugf("dev=%s, type=%s(0x%04x), len=%zu", dev->name, ether_type_ntoa(hdr->type), type, flen);
+    debugf("%s => %s, dev=%s, type=%s(0x%04x), len=%zu", 
+            ether_addr_ntop(hdr->src, addr1, sizeof(addr1)), 
+            ether_addr_ntop(hdr->dst, addr2, sizeof(addr2)), dev->name, 
+            ether_type_ntoa(hdr->type), type, flen);
+#ifdef HDRDUMP
     ether_dump(frame, flen);
+#endif
     return net_input_handler(type, (uint8_t *)(hdr + 1), flen - sizeof(*hdr), dev);
 }
 
@@ -134,7 +181,7 @@ ether_setup_helper(struct net_device *dev)
 {
     dev->type = NET_DEVICE_TYPE_ETHERNET;
     dev->mtu = ETHER_PAYLOAD_SIZE_MAX;
-    dev->flags = (NET_DEVICE_FLAG_BROADCAST | NET_DEVICE_FLAG_NEED_ARP);
+    dev->flags = (NET_DEVICE_FLAG_BROADCAST | NET_DEVICE_FLAG_NEED_RESOLVE);
     dev->hlen = ETHER_HDR_SIZE;
     dev->alen = ETHER_ADDR_LEN;
     memcpy(dev->broadcast, ETHER_ADDR_BROADCAST, ETHER_ADDR_LEN);

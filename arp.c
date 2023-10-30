@@ -65,6 +65,7 @@ arp_opcode_ntoa(uint16_t opcode)
     return "Unknown";
 }
 
+#ifdef HDRDUMP
 static void
 arp_dump(const uint8_t *data, size_t len)
 {
@@ -90,6 +91,7 @@ arp_dump(const uint8_t *data, size_t len)
 #endif
     funlockfile(stderr);
 }
+#endif
 
 /*
  * ARP Cache
@@ -193,7 +195,9 @@ arp_request(struct net_iface *iface, ip_addr_t tpa)
     memset(request.tha, 0, ETHER_ADDR_LEN);
     memcpy(request.tpa, &tpa, IP_ADDR_LEN);
     debugf("dev=%s, opcode=%s(0x%04x), len=%zu", iface->dev->name, arp_opcode_ntoa(request.hdr.op), ntoh16(request.hdr.op), sizeof(request));
+#ifdef HDRDUMP
     arp_dump((uint8_t *)&request, sizeof(request));
+#endif
     return net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&request, sizeof(request), iface->dev->broadcast);
 }
 
@@ -212,7 +216,9 @@ arp_reply(struct net_iface *iface, const uint8_t *tha, ip_addr_t tpa, const uint
     memcpy(reply.tha, tha, ETHER_ADDR_LEN);
     memcpy(reply.tpa, &tpa, IP_ADDR_LEN);
     debugf("dev=%s, opcode=%s(0x%04x), len=%zu", iface->dev->name, arp_opcode_ntoa(reply.hdr.op), ntoh16(reply.hdr.op), sizeof(reply));
+#ifdef HDRDUMP
     arp_dump((uint8_t *)&reply, sizeof(reply));
+#endif
     return net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&reply, sizeof(reply), dst);
 }
 
@@ -238,7 +244,9 @@ arp_input(const uint8_t *data, size_t len, struct net_device *dev)
         return;
     }
     debugf("dev=%s, opcode=%s(0x%04x), len=%zu", dev->name, arp_opcode_ntoa(msg->hdr.op), ntoh16(msg->hdr.op), len);
+#ifdef HDRDUMP
     arp_dump(data, len);
+#endif
     memcpy(&spa, msg->spa, sizeof(spa));
     memcpy(&tpa, msg->tpa, sizeof(tpa));
     mutex_lock(&mutex);

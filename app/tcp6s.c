@@ -10,7 +10,8 @@
 #include "util.h"
 #include "net.h"
 #include "ip.h"
-#include "icmp.h"
+#include "ip6.h"
+#include "slaac.h"
 #include "tcp.h"
 #include "sock.h"
 
@@ -33,7 +34,7 @@ static int
 setup(void)
 {
     struct net_device *dev;
-    struct ip_iface *iface;
+    struct ip6_iface *iface;
 
     signal(SIGINT, on_signal);
     if (net_init() == -1) {
@@ -45,13 +46,13 @@ setup(void)
         errorf("loopback_init() failure");
         return -1;
     }
-    iface = ip_iface_alloc(LOOPBACK_IP_ADDR, LOOPBACK_NETMASK);
+    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
     if (!iface) {
-        errorf("ip_iface_alloc() failure");
+        errorf("ip6_iface_alloc() failure");
         return -1;
     }
-    if (ip_iface_register(dev, iface) == -1) {
-        errorf("ip_iface_register() failure");
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
         return -1;
     }
     dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
@@ -59,17 +60,17 @@ setup(void)
         errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip_iface_alloc(ETHER_TAP_IP_ADDR, ETHER_TAP_NETMASK);
+    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
-        errorf("ip_iface_alloc() failure");
+        errorf("ip6_iface_alloc() failure");
         return -1;
     }
-    if (ip_iface_register(dev, iface) == -1) {
-        errorf("ip_iface_register() failure");
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
         return -1;
     }
-    if (ip_route_set_default_gateway(iface, DEFAULT_GATEWAY) == -1) {
-        errorf("ip_route_set_default_gateway() failure");
+    if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
+        errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
     if (net_run() == -1) {
@@ -84,9 +85,9 @@ main(int argc, char *argv[])
 {
     int soc, acc;
     long int port;
-    struct sockaddr_in local = { .sin_family=AF_INET }, foreign;
+    struct sockaddr_in6 local = { .sin6_family=AF_INET6 }, foreign;
     int foreignlen;
-    char addr[SOCKADDR_IN_STR_LEN];
+    char addr[SOCKADDR_IN6_STR_LEN];
     uint8_t buf[1024];
     ssize_t ret;
 
@@ -95,8 +96,8 @@ main(int argc, char *argv[])
      */
     switch (argc) {
     case 3:
-        if (ip_addr_pton(argv[argc-2], &local.sin_addr) == -1) {
-            errorf("ip_addr_pton() failure, addr=%s", optarg);
+        if (ip6_addr_pton(argv[argc-2], &local.sin6_addr) == -1) {
+            errorf("ip6_addr_pton() failure, addr=%s", optarg);
             return -1;
         }
         /* fall through */
@@ -106,7 +107,7 @@ main(int argc, char *argv[])
             errorf("invalid port, port=%s", optarg);
             return -1;
         }
-        local.sin_port = hton16(port);
+        local.sin6_port = hton16(port);
         break;
     default:
         fprintf(stderr, "Usage: %s [addr] port\n", argv[0]);
@@ -122,7 +123,7 @@ main(int argc, char *argv[])
     /*
      *  Application Code
      */
-    soc = sock_open(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    soc = sock_open(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
     if (soc == -1) {
         errorf("sock_open() failure");
         return -1;

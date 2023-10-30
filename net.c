@@ -45,6 +45,11 @@ static struct net_protocol *protocols;
 static struct net_timer *timers;
 static struct net_event *events;
 
+static struct ip6_iface*
+net_ip6_init(struct net_device *dev);
+static int
+net_slaac_init();
+
 struct net_device *
 net_device_alloc(void (*setup)(struct net_device *dev))
 {
@@ -90,6 +95,10 @@ net_device_open(struct net_device *dev)
     }
     dev->flags |= NET_DEVICE_FLAG_UP;
     infof("dev=%s, state=%s", dev->name, NET_DEVICE_STATE(dev));
+    /* IPv6 Enable: created link-local address */
+    if (dev->type != NET_DEVICE_TYPE_LOOPBACK) {
+        net_slaac_init(net_ip6_init(dev));
+    }
     return 0;
 }
 
@@ -115,6 +124,9 @@ net_device_close(struct net_device *dev)
 int
 net_device_add_iface(struct net_device *dev, struct net_iface *iface)
 {
+    // 同じFamilyのアドレスを複数持てるようにコメントアウト
+    // + ソースアドレスの選択実装
+/*
     struct net_iface *entry;
 
     for (entry = dev->ifaces; entry; entry = entry->next) {
@@ -123,6 +135,7 @@ net_device_add_iface(struct net_device *dev, struct net_iface *iface)
             return -1;
         }
     }
+*/
     iface->next = dev->ifaces;
     iface->dev = dev;
     dev->ifaces = iface;
@@ -190,6 +203,7 @@ net_input_handler(uint16_t type, const uint8_t *data, size_t len, struct net_dev
         }
     }
     /* unsupported protocol */
+    debugf("drop %0x04x", type);
     return 0;
 }
 
@@ -360,9 +374,38 @@ net_shutdown(void)
 
 #include "arp.h"
 #include "ip.h"
+#include "ip6.h"
 #include "icmp.h"
+#include "icmp6.h"
+#include "nd6.h"
 #include "udp.h"
 #include "tcp.h"
+#include "slaac.h"
+
+static struct ip6_iface*
+net_ip6_init(struct net_device *dev)
+{
+    struct ip6_iface *iface;
+
+    iface = ip6_device_init(dev);
+    if (iface == NULL){
+        errorf("net_ip6_init() failure");
+        return NULL;
+    }
+
+    return iface;
+}
+
+static int
+net_slaac_init(struct ip6_iface *iface)
+{
+    if (slaac_run(iface) < 0 || iface == NULL) {
+        errorf("net_slaac_init() failure");
+        return -1; 
+    }
+
+    return 0;
+}
 
 int
 net_init(void)
@@ -379,8 +422,20 @@ net_init(void)
         errorf("ip_init() failure");
         return -1;
     }
+    if (ip6_init() == -1) {
+        errorf("ip6_init() failure");
+        return -1;
+    }
+    if (nd6_init() == -1) {
+        errorf("nd6_init() failure");
+        return -1;
+    }    
     if (icmp_init() == -1) {
         errorf("icmp_init() failure");
+        return -1;
+    }
+    if (icmp6_init() == -1) {
+        errorf("icmp6_init() failure");
         return -1;
     }
     if (udp_init() == -1) {

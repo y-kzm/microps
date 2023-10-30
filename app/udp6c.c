@@ -9,7 +9,8 @@
 #include "util.h"
 #include "net.h"
 #include "ip.h"
-#include "icmp.h"
+#include "ip6.h"
+#include "slaac.h"
 #include "udp.h"
 #include "sock.h"
 
@@ -33,7 +34,7 @@ static int
 setup(void)
 {
     struct net_device *dev;
-    struct ip_iface *iface;
+    struct ip6_iface *iface;
 
     signal(SIGINT, on_signal);
     if (net_init() == -1) {
@@ -45,13 +46,13 @@ setup(void)
         errorf("loopback_init() failure");
         return -1;
     }
-    iface = ip_iface_alloc(LOOPBACK_IP_ADDR, LOOPBACK_NETMASK);
+    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIXLEN, 0);
     if (!iface) {
-        errorf("ip_iface_alloc() failure");
+        errorf("ip6_iface_alloc() failure");
         return -1;
     }
-    if (ip_iface_register(dev, iface) == -1) {
-        errorf("ip_iface_register() failure");
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
         return -1;
     }
     dev = ether_tap_init(ETHER_TAP_NAME, ETHER_TAP_HW_ADDR);
@@ -59,17 +60,17 @@ setup(void)
         errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip_iface_alloc(ETHER_TAP_IP_ADDR, ETHER_TAP_NETMASK);
+    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, 0);
     if (!iface) {
-        errorf("ip_iface_alloc() failure");
+        errorf("ip6_iface_alloc() failure");
         return -1;
     }
-    if (ip_iface_register(dev, iface) == -1) {
-        errorf("ip_iface_register() failure");
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
         return -1;
     }
-    if (ip_route_set_default_gateway(iface, DEFAULT_GATEWAY) == -1) {
-        errorf("ip_route_set_default_gateway() failure");
+    if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
+        errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
     if (net_run() == -1) {
@@ -84,7 +85,7 @@ main(int argc, char *argv[])
 {
     int opt, soc;
     long int port;
-    struct sockaddr_in local = { .sin_family=AF_INET }, foreign;
+    struct sockaddr_in6 local = { .sin6_family=AF_INET6 }, foreign;
     uint8_t buf[1024];
 
     /*
@@ -93,8 +94,8 @@ main(int argc, char *argv[])
     while ((opt = getopt(argc, argv, "s:p:")) != -1) {
         switch (opt) {
         case 's':
-            if (ip_addr_pton(optarg, &local.sin_addr) == -1) {
-                errorf("ip_addr_pton() failure, addr=%s", optarg);
+            if (ip6_addr_pton(optarg, &local.sin6_addr) == -1) {
+                errorf("ip6_addr_pton() failure, addr=%s", optarg);
                 return -1;
             }
             break;
@@ -104,7 +105,7 @@ main(int argc, char *argv[])
                 errorf("invalid port, port=%s", optarg);
                 return -1;
             }
-            local.sin_port = hton16(port);
+            local.sin6_port = hton16(port);
             break;
         default:
             fprintf(stderr, "Usage: %s [-s local_addr] [-p local_port] foreign_addr:port\n", argv[0]);
@@ -115,7 +116,7 @@ main(int argc, char *argv[])
         fprintf(stderr, "Usage: %s [-s local_addr] [-p local_port] foreign_addr:port\n", argv[0]);
         return -1;
     }
-    if (sockaddr_pton(AF_INET, argv[optind], (struct sockaddr *)&foreign, sizeof(foreign)) == -1) {
+    if (sockaddr_pton(AF_INET6, argv[optind], (struct sockaddr *)&foreign, sizeof(foreign)) == -1) {
         errorf("sockaddr_pton() failure, %s", argv[optind]);
         return -1;
     }
@@ -129,25 +130,29 @@ main(int argc, char *argv[])
     /*
      * Application Code
      */
-    soc = sock_open(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    soc = sock_open(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (soc == -1) {
         errorf("sock_open() failure");
         return -1;
     }
-    if (local.sin_port) {
+    if (local.sin6_port) {
         if (sock_bind(soc, (struct sockaddr *)&local, sizeof(local)) == -1) {
             errorf("sock_bind() failure");
             return -1;
         }
     }
+    char addr[SOCKADDR_IN6_STR_LEN];
+    ssize_t ret;
     while (!terminate) {
         if (!fgets((char *)buf, sizeof(buf), stdin)) {
             break;
         }
-        if (sock_sendto(soc, buf, strlen((char *)buf), (struct sockaddr *)&foreign, sizeof(foreign)) == -1) {
+        if ((ret = sock_sendto(soc, buf, strlen((char *)buf), (struct sockaddr *)&foreign, sizeof(foreign))) == -1) {
             errorf("sock_sendto() failure");
             break;
         }
+        infof("%zu byte send data to %s", ret, sockaddr_ntop((struct sockaddr *)&foreign, addr, sizeof(addr)));
+        hexdump(stderr, buf, ret);
     }
     sock_close(soc);
     /*

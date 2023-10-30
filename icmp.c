@@ -140,13 +140,13 @@ icmp_output(uint8_t type, uint8_t code, uint32_t values, const uint8_t *data, si
         ip_addr_ntop(dst, addr2, sizeof(addr2)),
         icmp_type_ntoa(hdr->type), hdr->type, msg_len);
     icmp_dump((uint8_t *)hdr, msg_len);
-    return ip_output(IP_PROTOCOL_ICMP, (uint8_t *)hdr, msg_len, src, dst);
+    return ip_output(PROTOCOL_ICMP, (uint8_t *)hdr, msg_len, src, dst);
 }
 
 int
 icmp_init(void)
 {
-    if (ip_protocol_register("ICMP", IP_PROTOCOL_ICMP, icmp_input) == -1) {
+    if (ip_protocol_register("ICMP", PROTOCOL_ICMP, icmp_input) == -1) {
         errorf("ip_protocol_register() failure");
         return -1;
     }
