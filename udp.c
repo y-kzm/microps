@@ -309,7 +309,7 @@ udp_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *dat
     pseudo.len = hton16(total);
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr->sum = cksum16((uint16_t *)hdr, total, psum);
-    debugf("%s => %s, len=%zu (payload=%zu)",
+    debugf("%s => %s, len=%u (payload=%zu)",
         ip_endpoint_ntop(src, ep1, sizeof(ep1)), ip_endpoint_ntop(dst, ep2, sizeof(ep2)), total, len);
 #ifdef HDRDUMP
     udp_dump((uint8_t *)hdr, total);
@@ -495,7 +495,7 @@ udp_sendto(int id, uint8_t *data, size_t len, struct ip_endpoint *foreign)
             for (p = UDP_SOURCE_PORT_MIN; p <= UDP_SOURCE_PORT_MAX; p++) {
                 if (!udp_pcb_select(local.addr, hton16(p))) {
                     pcb->local.port = hton16(p);
-                    debugf("dinamic assign local port, port=%d", p);
+                    debugf("dynamic assign local port, port=%d", p);
                     break;
                 }
             }
@@ -526,7 +526,7 @@ udp_sendto(int id, uint8_t *data, size_t len, struct ip_endpoint *foreign)
             for (p = UDP_SOURCE_PORT_MIN; p <= UDP_SOURCE_PORT_MAX; p++) {
                 if (!udp_pcb_select(local.addr, hton16(p))) {
                     pcb->local.port = hton16(p);
-                    debugf("dinamic assign local port, port=%d", p);
+                    debugf("dynamic assign local port, port=%d", p);
                     break;
                 }
             }
