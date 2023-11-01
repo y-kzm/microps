@@ -2,10 +2,10 @@ APPS = app/udpc.exe \
        app/udps.exe \
        app/tcpc.exe \
        app/tcps.exe \
-	  	 app/udp6c.exe \
-	  	 app/udp6s.exe \
-	  	 app/tcp6c.exe \
-	  	 app/tcp6s.exe \
+       app/udp6c.exe \
+       app/udp6s.exe \
+       app/tcp6c.exe \
+       app/tcp6s.exe \
 
 TESTS = test/test.exe \
         test/router6.exe \
@@ -60,13 +60,3 @@ $(TESTS): %.exe : %.o $(OBJS) $(DRIVERS) test/test.h
 
 clean:
 	rm -rf $(APPS) $(APPS:.exe=.o) $(OBJS) $(DRIVERS) $(TESTS) $(TESTS:.exe=.o)
-
-tap:
-	sudo ./script/tap.sh
-
-#setup:
-#	sudo ./script/setup.sh
-#
-#cleanup:
-#	sudo ip --all netns delete
-

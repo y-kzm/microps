@@ -242,7 +242,7 @@ tcp_retransmit_queue_cleanup(struct tcp_pcb *pcb)
             break;
         }
         entry = queue_pop(&pcb->queue);
-        debugf("remove, seq=%u, flags=%s, len=%u", entry->seq, tcp_flg_ntoa(entry->flg), entry->len);
+        debugf("remove, seq=%u, flags=%s, len=%zu", entry->seq, tcp_flg_ntoa(entry->flg), entry->len);
         memory_free(entry);
     }
     return;
@@ -317,7 +317,7 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
         pseudo.len = hton16(total);
         psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
         hdr->sum = cksum16((uint16_t *)hdr, total, psum);
-        debugf("%s => %s, len=%zu (payload=%zu)",
+        debugf("%s => %s, len=%u (payload=%zu)",
             ip_endpoint_ntop(local, ep1, sizeof(ep1)), ip_endpoint_ntop(foreign, ep2, sizeof(ep2)), total, len);
 #ifdef HDRDUMP
         tcp_dump((uint8_t *)hdr, total);
@@ -346,7 +346,7 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
         pseudo6.len = hton16(total);
         psum = ~cksum16((uint16_t *)&pseudo6, sizeof(pseudo6), 0);
         hdr->sum = cksum16((uint16_t *)hdr, total, psum);
-        debugf("%s => %s, len=%zu (payload=%zu)",
+        debugf("%s => %s, len=%u (payload=%zu)",
             ip_endpoint_ntop(local, ep3, sizeof(ep3)), ip_endpoint_ntop(foreign, ep4, sizeof(ep4)), total, len);
 #ifdef HDRDUMP
         tcp_dump((uint8_t *)hdr, total);
@@ -1144,13 +1144,13 @@ tcp_connect(int id, struct ip_endpoint *foreign)
         for (p = TCP_SOURCE_PORT_MIN; p <= TCP_SOURCE_PORT_MAX; p++) {
             local.port = p;
             if (!tcp_pcb_select(&local, foreign)) {
-                debugf("dinamic assign srouce port: %d", ntoh16(local.port));
+                debugf("dynamic assign source port: %d", ntoh16(local.port));
                 pcb->local.port = local.port;
                 break;
             }
         }
         if (!local.port) {
-            debugf("failed to dinamic assign srouce port");
+            debugf("failed to dynamic assign source port");
             mutex_unlock(&mutex);
             return -1;
         }

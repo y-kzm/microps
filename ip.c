@@ -349,12 +349,12 @@ ip_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
     hlen = (hdr->vhl & 0x0f) << 2;
     if (len < hlen) {
-        errorf("header length error: hlen=%u, len=%u", hlen, len);
+        errorf("header length error: hlen=%u, len=%zu", hlen, len);
         return;
     }
     total = ntoh16(hdr->total);
     if (len < total) {
-        errorf("total length error: total=%u, len=%u", total, len);
+        errorf("total length error: total=%u, len=%zu", total, len);
         return;
     }
     if (cksum16((uint16_t *)hdr, hlen, 0) != 0) {
@@ -431,7 +431,7 @@ ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, si
     hdr->sum = 0;
     hdr->src = src;
     hdr->dst = dst;
-    hdr->sum = cksum16((uint16_t *)hdr, hlen, 0); /* don't convert bytoder */
+    hdr->sum = cksum16((uint16_t *)hdr, hlen, 0); /* don't convert byteorder */
     memcpy(hdr+1, data, len);
     debugf("dev=%s, iface=%s, protocol=%s(0x%02x), len=%u",
         NET_IFACE(iface)->dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), ip_protocol_name(protocol), protocol, total);
@@ -479,7 +479,7 @@ ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_a
     }
     nexthop = (route->nexthop != IP_ADDR_ANY) ? route->nexthop : dst;
     if (NET_IFACE(iface)->dev->mtu < IP_HDR_SIZE_MIN + len) {
-        errorf("too long, dev=%s, mtu=%s, tatal=%zu",
+        errorf("too long, dev=%s, mtu=%u, tatal=%zu",
             NET_IFACE(iface)->dev->name, NET_IFACE(iface)->dev->mtu, IP_HDR_SIZE_MIN + len);
         return -1;
     }
