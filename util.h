@@ -9,6 +9,7 @@
 //#define HEXDUMP
 //#define HDRDUMP
 //#define NDCACHEDUMP
+//#define FIBDUMP
 
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))

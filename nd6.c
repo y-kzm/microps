@@ -488,7 +488,7 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         ra->nd_ra_type, len);
-    if (iface->slaac.state != SLAAC_DONE && iface->slaac.state != SLAAC_ENABLE) {
+    if (iface->slaac.state != SLAAC_DONE && iface->slaac.state != SLAAC_DISABLE) {
         slaac_ra_input(data, len, src, dst, iface);
     }
 }

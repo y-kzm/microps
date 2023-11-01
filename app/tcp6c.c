@@ -20,6 +20,8 @@
 
 #include "test/test.h"
 
+#define CONF_MODE SLAAC_ENABLE /* Addressing by SLAAC only */
+
 static volatile sig_atomic_t terminate;
 
 static void
@@ -60,18 +62,20 @@ setup(void)
         errorf("ether_tap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, SLAAC_DISABLE);
-    if (!iface) {
-        errorf("ip6_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
-        return -1;
-    }
-    if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
-        errorf("ip6_route_set_default_gateway() failure");
-        return -1;
+    if (!CONF_MODE) {
+        iface = ip6_iface_alloc(ETHER_TAP_IPV6_ADDR, ETHER_TAP_IPV6_PREFIXLEN, SLAAC_DISABLE);
+        if (!iface) {
+            errorf("ip6_iface_alloc() failure");
+            return -1;
+        }
+        if (ip6_iface_register(dev, iface) == -1) {
+            errorf("ip6_iface_register() failure");
+            return -1;
+        }
+        if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
+            errorf("ip6_route_set_default_gateway() failure");
+            return -1;
+        }
     }
     if (net_run() == -1) {
         errorf("net_run() failure");

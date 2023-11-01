@@ -28,7 +28,7 @@ slaac_addr_create_globaladdr(const uint8_t *hwaddr, const ip6_addr_t prefix, con
  * SLAAC: input/output
  */
 
-void
+int
 slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
     struct nd_router_adv *ra;
@@ -44,24 +44,26 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
     slaac_iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), opt_pi->prefixlen, 0);
     if (ip6_iface_register(iface->iface.dev, slaac_iface) == -1) {
         errorf("ip6_iface_register() failure");
-        return;
+        return -1;
     }
 
     // TODO: DAD & デフォルトルートを設定
 
     if (ip6_route_set_multicast(slaac_iface) != 0) {
         errorf("ip6_route_set_multicast() failure");
-        return;
+        return -1;
     }
     if (ip6_route_set_default_gateway(slaac_iface, ip6_addr_ntop(src, addr, sizeof(addr))) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
-        return;
+        return -1;
     }
 
     /* done */
     infof("created, global address by slaac=%s, dev=%s", 
         ip6_addr_ntop(slaac_iface->ip6_addr.addr, addr, sizeof(addr)), slaac_iface->iface.dev->name);
     iface->slaac.state = SLAAC_DONE;
+
+    return 0;
 }
 
 static int

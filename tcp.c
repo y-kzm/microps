@@ -319,7 +319,9 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
         hdr->sum = cksum16((uint16_t *)hdr, total, psum);
         debugf("%s => %s, len=%zu (payload=%zu)",
             ip_endpoint_ntop(local, ep1, sizeof(ep1)), ip_endpoint_ntop(foreign, ep2, sizeof(ep2)), total, len);
+#ifdef HDRDUMP
         tcp_dump((uint8_t *)hdr, total);
+#endif
         if (ip_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr4, foreign->addr.s_addr4) == -1) {
             return -1;
         }
@@ -346,7 +348,9 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
         hdr->sum = cksum16((uint16_t *)hdr, total, psum);
         debugf("%s => %s, len=%zu (payload=%zu)",
             ip_endpoint_ntop(local, ep3, sizeof(ep3)), ip_endpoint_ntop(foreign, ep4, sizeof(ep4)), total, len);
+#ifdef HDRDUMP
         tcp_dump((uint8_t *)hdr, total);
+#endif
         if (ip6_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr6, foreign->addr.s_addr6) == -1) {
             return -1;
         }
@@ -803,7 +807,9 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
         ip_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
+#ifdef HDRDUMP
     tcp_dump(data, len);
+#endif
     local.addr = tcp4_dst;
     local.port = hdr->dst;
     foreign.addr = tcp4_src;
@@ -872,7 +878,6 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
 #ifdef HDRDUMP
     tcp_dump(data, len);
 #endif
-
     local.addr = tcp6_dst;
     local.port = hdr->dst;
     foreign.addr = tcp6_src;

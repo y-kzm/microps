@@ -35,6 +35,8 @@ static struct ip6_route *routes;
 
 static uint8_t
 ip6_addr_netmask_to_prefixlen(ip6_addr_t netmask);
+static int
+ip6_forward(const uint8_t *data, size_t len, struct net_device *dev);
 
 // Unspecified IPv6 address
 const ip6_addr_t IPV6_UNSPECIFIED_ADDR = 
@@ -221,15 +223,17 @@ ip6_fib_dump()
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
     char network[IPV6_ADDR_STR_LEN+4]; /* Add "/128" */
+    char interface[IPV6_ADDR_STR_LEN+IFNAMSIZ+1];
     
     flockfile(stderr);
     fprintf(stderr, "network                        nexthop                        interface\n");
-    fprintf(stderr, "=======================================================================\n");
+    fprintf(stderr, "=============================================================================================\n");
     for (route = routes; route; route = route->next) {
         sprintf(network, "%s/%d", ip6_addr_ntop(route->network, addr1, sizeof(addr1)), ip6_addr_netmask_to_prefixlen(route->netmask));
+        sprintf(interface, "%s%%%s", ip6_addr_ntop(route->iface->ip6_addr.addr, addr1, sizeof(addr1)), route->iface->iface.dev->name);
         fprintf(stderr, "%-30s %-30s %-30s\n", 
                 network, ip6_addr_ntop(route->nexthop, addr2, sizeof(addr2)), 
-                route->iface->iface.dev->name);
+                interface);
     }
     funlockfile(stderr);
 }
@@ -405,7 +409,8 @@ ip6_route_lookup(ip6_addr_t dst)
 }
 
 /* NOTE: must not be call after net_run() */
-static struct ip6_route *
+//static struct ip6_route *
+static int
 ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct ip6_iface *iface)
 {
     struct ip6_route *route, *res;
@@ -413,18 +418,18 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
     char addr3[IPV6_ADDR_STR_LEN];
     char addr4[IPV6_ADDR_STR_LEN];
 
+    res = ip6_route_lookup(network); 
+    if (res != NULL) {
+        if (IPV6_ADDR_EQUAL(&res->network, &network) && IPV6_ADDR_EQUAL(&res->netmask, &netmask)) {
+            debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
+            return 1;
+        }
+    }
+
     route = memory_alloc(sizeof(*route));
     if (!route) {
         errorf("memory_alloc() failure");
-        return NULL;
-    }
-
-    res = ip6_route_lookup(network); 
-    if (res != NULL) {
-        if (res->iface == iface) {
-            debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
-            return NULL;
-        }
+        return -1;
     }
     
     route->network = network;
@@ -440,7 +445,8 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
         ip6_addr_ntop(route->iface->ip6_addr.addr, addr4, sizeof(addr4)),
         NET_IFACE(iface)->dev->name
     );
-    return route;
+    return 0;
+    //return route;
 }
 
 /* NOTE: must not be call after net_run() */
@@ -456,7 +462,7 @@ ip6_route_set_default_gateway(struct ip6_iface *iface, const char *gateway)
 
     ip6_addr_prefixlen_to_netmask(0, &mask);
     IPV6_ADDR_MASK(&IPV6_UNSPECIFIED_ADDR, &mask, &mask); 
-    if (!ip6_route_add(IPV6_UNSPECIFIED_ADDR, mask, gw, iface)) {
+    if (ip6_route_add(IPV6_UNSPECIFIED_ADDR, mask, gw, iface) < 0) {
         errorf("ip6_route_add() failure");
         return -1;
     }
@@ -470,7 +476,7 @@ ip6_route_set_multicast(struct ip6_iface *iface)
 
     ip6_addr_prefixlen_to_netmask(IPV6_MULTICAST_ADDR_PREFIX_LEN, &mask);
     IPV6_ADDR_MASK(&IPV6_MULTICAST_ADDR_PREFIX, &mask, &mask); 
-    if (!ip6_route_add(IPV6_MULTICAST_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface)) {
+    if (ip6_route_add(IPV6_MULTICAST_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface) < 0) {
         errorf("ip6_route_add() failure");
         return -1;
     }
@@ -485,7 +491,7 @@ ip6_route_set_linklocal(struct ip6_iface *iface)
 
     ip6_addr_prefixlen_to_netmask(64, &mask);
     IPV6_ADDR_MASK(&IPV6_LINK_LOCAL_ADDR_PREFIX, &mask, &mask); 
-    if (!ip6_route_add(IPV6_LINK_LOCAL_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface)) {
+    if (ip6_route_add(IPV6_LINK_LOCAL_ADDR_PREFIX, mask, IPV6_UNSPECIFIED_ADDR, iface) < 0) {
         errorf("ip6_route_add() failure");
         return -1;
     }
@@ -544,8 +550,8 @@ ip6_iface_register(struct net_device *dev, struct ip6_iface *iface)
         return -1;
     }
     IPV6_ADDR_MASK(&iface->ip6_addr.addr, &iface->ip6_addr.netmask, &prefix); 
-    if (!ip6_route_add(prefix, iface->ip6_addr.netmask, IPV6_UNSPECIFIED_ADDR, iface)) {
-        errorf("ip_route_add() failure");
+    if (ip6_route_add(prefix, iface->ip6_addr.netmask, IPV6_UNSPECIFIED_ADDR, iface) < 0) {
+        errorf("ip6_route_add() failure");
         return -1;
     }
     iface->next = ifaces;
@@ -585,15 +591,6 @@ ip6_iface_select_linklocal()
 }
 
 /*
- * Forward
- */
-
-static void
-ip6_forward(){
-    warnf("forwarding is not supported: ignored");
-}
-
-/*
  * IPv6: input/output
  */
 
@@ -629,7 +626,6 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     struct ip6_iface *iface;
     struct net_iface *entry;
     struct ip6_protocol *proto;
-    struct ip6_route *route;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
@@ -665,12 +661,14 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 
     /* unicast check */
     /* find an interface which has IPv6 address that matches the destination address  */
+    int our_flg = 0; /* determine if the packet is addressed to our */
     ip6_addr_t mcaaddr;
     for (entry = dev->ifaces; entry; entry = entry->next) {
         if (entry->family == NET_IFACE_FAMILY_IPV6) {
             iface = (struct ip6_iface *)entry;
             if (IPV6_ADDR_EQUAL(&iface->ip6_addr.addr, &hdr->ip6_dst)) {
-                /* Recognize as the packet addressed to our */
+                /* recognize as the packet addressed to our */
+                our_flg = 1;
                 break;
             }
             if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst)) {
@@ -681,10 +679,6 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
             }
         }
     }
-    if (!iface) {
-        /* iface is not registered to the device */
-        return;
-    }
 
     debugf("%s => %s, dev=%s, len=%u" ,ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), 
     ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)), dev->name, ntoh16(hdr->ip6_plen));
@@ -692,10 +686,10 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     ip6_dump(data, len);
 #endif
 
-    route = ip6_route_lookup(hdr->ip6_dst);
-    if (!route) {
-        /* Recognize as the packet addressed to others */
-        ip6_forward();
+    if (!our_flg && !IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst)) {
+        /* iface is not registered to the device */
+        /* for other host */
+        ip6_forward(data, len, dev);
         return;
     }
 
@@ -798,6 +792,60 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     }
     
     return len;
+}
+
+/*
+ * Forward
+ */
+
+static int
+ip6_forward(const uint8_t *data, size_t len, struct net_device *dev)
+{
+    struct ip6_route *route;
+    struct ip6_hdr *hdr;
+    ip6_addr_t nexthop;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+
+    hdr = (struct ip6_hdr *)data;
+    
+    /* check hlim */
+    if (!(hdr->ip6_hlim - 1)) {
+        errorf("drop, hop limit: %u", hdr->ip6_hlim);
+        // send icmpv6
+        return -1;
+    }
+
+    /* No router to host */
+    route = ip6_route_lookup(hdr->ip6_dst);
+    if (!route) {
+        errorf("drop, no route: %s", ip6_addr_ntop(hdr->ip6_dst, addr1, sizeof(addr1)));
+        // send icmpv6
+        return -1;
+    }
+
+    /* packet too big */
+    if (dev->mtu < IPV6_HDR_SIZE + len) {
+        errorf("too long, dev=%s, mtu=%u < %zu", dev->name, dev->mtu, IPV6_HDR_SIZE + len);
+        // send icmpv6
+        return -1;
+    }  
+
+    /* hlim -1 */
+    hdr->ip6_hlim--;
+
+    debugf("forward, from=%s%%%s, to=%s%%%s", 
+            ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), dev->name,
+            ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)), route->iface->iface.dev->name);
+
+    nexthop = (!IPV6_ADDR_EQUAL(&route->nexthop, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst)) ? route->nexthop : hdr->ip6_dst;
+    if (ip6_output_device(route->iface, data, len, nexthop) == -1) {
+        errorf("ip6_output_device() failure");
+        // send icmpv6
+        return -1;
+    }
+
+    return 0;
 }
 
 /*

@@ -249,6 +249,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
     uint16_t psum = 0;
 
     /* select source address */
+    /*
     struct ip6_iface *res;
 
     res = ip6_rule_addr_select(dst);
@@ -259,6 +260,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
         warnf("no appropriate source address");
         return -1;
     }
+    */
 
     /* icmp6 header */
     hdr = (struct icmp6_hdr *)buf;

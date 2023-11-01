@@ -7,7 +7,9 @@ APPS = app/udpc.exe \
 	  	 app/tcp6c.exe \
 	  	 app/tcp6s.exe \
 
-TESTS = test/test.exe 
+TESTS = test/test.exe \
+        test/router6.exe \
+        test/httpd6.exe
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
