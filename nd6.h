@@ -105,6 +105,9 @@ struct nd_opt_mtu {
     // TODO: not supported
 };
 
+extern void
+nd6_cache_dump(FILE *fp);
+
 extern int
 nd6_resolve(struct ip6_iface *iface, ip6_addr_t ip6addr, uint8_t *lladdr);
 

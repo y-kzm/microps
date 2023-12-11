@@ -6,15 +6,15 @@
 #include <unistd.h>
 
 /* flags for debug */
-#define ENABLE_HEXDUMP
-#define ENABLE_HDRDUMP
-#define ENABLE_NDCACHEDUMP
-#define ENABLE_FIBDUMP
+//#define ENABLE_HEXDUMP
+//#define ENABLE_HDRDUMP
+//#define ENABLE_NDCACHEDUMP
+//#define ENABLE_FIBDUMP
 
 #define ENNABLE_PRINT_ERROR
-#define ENNABLE_PRINT_WARNIG
+//#define ENNABLE_PRINT_WARNIG
 #define ENNABLE_PRINT_INFO
-#define ENNABLE_PRINT_DEBUG
+//#define ENNABLE_PRINT_DEBUG
 
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))

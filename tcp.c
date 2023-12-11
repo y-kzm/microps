@@ -153,7 +153,7 @@ tcp_pcb_select(struct ip_endpoint *local, struct ip_endpoint *foreign)
                         listen_pcb = pcb;
                     }
                 }
-                pcb->foreign.addr.family = AF_INET4;
+                pcb->foreign.addr.family = AF_INET;
             }
             break;
         case AF_INET6:

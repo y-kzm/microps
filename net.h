@@ -115,4 +115,7 @@ net_init(void);
 extern int 
 net_check_run();
 
+extern void
+net_devices_dump(FILE *fp);
+
 #endif

@@ -47,6 +47,8 @@
 #define IPV6_ADDR_SCOPE_ORGLOCAL	 0x08
 #define IPV6_ADDR_SCOPE_GLOBAL		 0x0e
 
+#define IPV6_IFACE(x) ((struct ip6_iface *)(x))
+
 /* typedef uint8_t[16] ip6_addr_t */
 typedef struct {
     union {
@@ -134,6 +136,10 @@ ip6_rule_addr_select(const ip6_addr_t dst);
 
 extern void
 ip6_dump(const uint8_t *data, size_t len);
+extern void
+ip6_iface_dump(FILE *fp, struct net_iface *iface);
+extern void
+ip6_fib_dump(FILE *fp);
 
 extern int
 ip6_route_set_default_gateway(struct ip6_iface *iface, const char *gateway);

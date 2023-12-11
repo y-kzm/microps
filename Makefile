@@ -8,6 +8,7 @@ APPS = app/udpc.exe \
        app/tcp6s.exe \
        app/httpd6.exe \
        app/router6.exe \
+			 app/microsh.exe \
 
 TESTS = test/test.exe \
 

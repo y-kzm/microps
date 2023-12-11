@@ -75,7 +75,7 @@ nd6_state_ntoa(uint8_t state) {
     return "UNKNOWN";
 }
 
-static void
+void
 nd6_cache_dump(FILE *fp)
 {
     struct nd6_cache *entry = caches;
@@ -83,7 +83,7 @@ nd6_cache_dump(FILE *fp)
     char addr2[ETHER_ADDR_STR_LEN];
 
     flockfile(fp);
-    fprintf(fp, "=============================================================================\n");
+    //fprintf(fp, "=============================================================================\n");
     for (entry = caches; entry < tailof(caches); entry++) {
         if (entry->state != ND6_STATE_NONE){
             fprintf(fp, " %s lladdr %s state %s ", 

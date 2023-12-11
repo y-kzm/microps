@@ -217,7 +217,22 @@ ip6_dump(const uint8_t *data, size_t len)
 }
 
 void
-ip6_fib_dump()
+ip6_iface_dump(FILE *fp, struct net_iface *iface)
+{
+    char addr[IPV6_ADDR_STR_LEN];
+
+
+    flockfile(stderr);
+    fprintf(stderr, "   inet6: %s/%d scope 0x%02x\n", 
+        ip6_addr_ntop(IPV6_IFACE(iface)->ip6_addr.addr, addr, sizeof(addr)), 
+        IPV6_IFACE(iface)->ip6_addr.prefixlen, 
+        IPV6_IFACE(iface)->ip6_addr.scope
+    );
+    funlockfile(stderr);
+}
+
+void
+ip6_fib_dump(FILE *fp)
 {
     struct ip6_route *route;
     char addr1[IPV6_ADDR_STR_LEN];
@@ -225,17 +240,17 @@ ip6_fib_dump()
     char network[IPV6_ADDR_STR_LEN+4]; /* Add "/128" */
     char interface[IPV6_ADDR_STR_LEN+IFNAMSIZ+1];
     
-    flockfile(stderr);
+    flockfile(fp);
     fprintf(stderr, "network                        nexthop                        interface\n");
     fprintf(stderr, "=============================================================================================\n");
     for (route = routes; route; route = route->next) {
         sprintf(network, "%s/%d", ip6_addr_ntop(route->network, addr1, sizeof(addr1)), ip6_addr_netmask_to_prefixlen(route->netmask));
         sprintf(interface, "%s%%%s", ip6_addr_ntop(route->iface->ip6_addr.addr, addr1, sizeof(addr1)), route->iface->iface.dev->name);
-        fprintf(stderr, "%-30s %-30s %-30s\n", 
+        fprintf(fp, "%-30s %-30s %-30s\n", 
                 network, ip6_addr_ntop(route->nexthop, addr2, sizeof(addr2)), 
                 interface);
     }
-    funlockfile(stderr);
+    funlockfile(fp);
 }
 
 /*

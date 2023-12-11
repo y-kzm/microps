@@ -372,6 +372,7 @@ net_shutdown(void)
     debugf("shutdown");
 }
 
+#include "ether.h"
 #include "arp.h"
 #include "ip.h"
 #include "ip6.h"
@@ -381,6 +382,34 @@ net_shutdown(void)
 #include "udp.h"
 #include "tcp.h"
 #include "slaac.h"
+
+void
+net_devices_dump(FILE *fp)
+{
+    struct net_device *dev;
+    struct net_iface *iface;
+    char addr[ETHER_ADDR_STR_LEN];
+
+    for (dev = devices; dev; dev = dev->next) {
+        fprintf(fp, 
+            "%d: %s, type=0x%04x, mtu=%u, state=%s, link/ether %s\n", 
+            dev->index, dev->name, dev->type, dev->mtu, NET_DEVICE_STATE(dev),
+            ether_addr_ntop(dev->addr, addr, sizeof(addr))
+        );
+        for (iface = dev->ifaces; iface; iface = iface->next) {
+            switch (dev->ifaces->family) {
+            case NET_IFACE_FAMILY_IP:
+                fprintf(fp, "   inet: dump is not support\n");
+                break;
+            case NET_IFACE_FAMILY_IPV6:
+                ip6_iface_dump(fp, NET_IFACE(iface));
+                break; 
+            default:
+                break;
+            }
+        }
+    }
+}
 
 static struct ip6_iface*
 net_ip6_init(struct net_device *dev)
