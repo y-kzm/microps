@@ -15,7 +15,7 @@
 #include "driver/loopback.h"
 #include "driver/ether_pcap.h"
 
-#include "test/config.h"
+#include "app/config.h"
 
 static volatile sig_atomic_t terminate;
 
@@ -33,6 +33,7 @@ setup(void)
 {
     struct net_device *dev;
     struct ip6_iface *iface;
+    int i = 0;
 
     signal(SIGINT, on_signal);
     if (net_init() == -1) {
@@ -56,35 +57,26 @@ setup(void)
         return -1;
     }
 
-    /* device1 */
-    dev = ether_pcap_init(ETHER_DEVICE1_NAME, ETHER_DEVICE1_HW_ADDR);
-    if (!dev) {
-        errorf("ether_pcap_init() failure");
-        return -1;
+    /* devices */
+    while (i < ETHER_DEVICES_NUM) {
+        dev = ether_pcap_init(ETHER_DEVICES_NAME[i], ETHER_DEVICES_HW_ADDR[i]);
+        if (!dev) {
+            errorf("ether_pcap_init() failure");
+            return -1;
+        }
+        iface = ip6_iface_alloc(ETHER_DEVICES_IPV6_ADDR[i], ETHER_DEVICES_IPV6_PREFIXLEN[i], SLAAC_DISABLE);
+        if (!iface) {
+            errorf("ip6_iface_alloc() failure");
+            return -1;
+        }
+        if (ip6_iface_register(dev, iface) == -1) {
+            errorf("ip6_iface_register() failure");
+            return -1;
+        }
+        i++;
     }
-    iface = ip6_iface_alloc(ETHER_DEVICE1_IPV6_ADDR, ETHER_DEVICE1_IPV6_PREFIXLEN, SLAAC_DISABLE);
-    if (!iface) {
-        errorf("ip6_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
-        return -1;
-    }
-
-    /* device2 */
-    dev = ether_pcap_init(ETHER_DEVICE2_NAME, ETHER_DEVICE2_HW_ADDR);
-    if (!dev) {
-        errorf("ether_pcap_init() failure");
-        return -1;
-    }
-    iface = ip6_iface_alloc(ETHER_DEVICE2_IPV6_ADDR, ETHER_DEVICE2_IPV6_PREFIXLEN, SLAAC_DISABLE);
-    if (!iface) {
-        errorf("ip6_iface_alloc() failure");
-        return -1;
-    }
-    if (ip6_iface_register(dev, iface) == -1) {
-        errorf("ip6_iface_register() failure");
+    if (ip6_route_set_default_gateway(iface, IPV6_DEFAULT_GATEWAY) == -1) {
+        errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
 
@@ -107,7 +99,7 @@ main(int argc, char *argv[])
         return -1;
     }
     while (!terminate) {
-      sleep(1);
+        sleep(1);
     }
     /*
      * Cleanup protocol stack

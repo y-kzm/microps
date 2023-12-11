@@ -152,7 +152,7 @@ nd6_options_dump(const uint8_t *options, size_t len)
             debugf("not supported");
             break;
         }
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
         hexdump(stderr, options, len);
 #endif
     }
@@ -223,13 +223,13 @@ nd6_cache_select(ip6_addr_t ip6addr)
             errorf("nd6 cache table range exceeded: %d", offset);
             break;
         }
+        offset %= ND6_CACHE_SIZE;
         if (offset == hashindex) {
             break;
         }
-        if (entry->state != ND6_STATE_NONE && memcmp(&entry->ip6addr, &ip6addr, IPV6_ADDR_LEN) == 0) {
+        if (entry->state != ND6_STATE_NONE && IPV6_ADDR_EQUAL(&entry->ip6addr, &ip6addr)) {
             return entry;
         }
-        offset %= ND6_CACHE_SIZE;
         entry = &caches[offset]; 
     }
 
@@ -411,7 +411,7 @@ nd6_rs_output(struct ip6_iface *iface)
         ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)),
         ip6_addr_ntop(pseudo.dst, addr2, sizeof(addr2)),
         rs->nd_ns_type, msg_len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     icmp6_dump((uint8_t *)rs, msg_len);
 #endif
     return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
@@ -617,7 +617,7 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
         ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)),
         ip6_addr_ntop(pseudo.dst, addr2, sizeof(addr2)),
         ns->nd_ns_type, msg_len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     icmp6_dump((uint8_t *)ns, msg_len);
 #endif
     return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, iface->ip6_addr.addr, pseudo.dst); 
@@ -742,7 +742,7 @@ nd6_na_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, s
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         na->nd_na_type, len, msg_len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     icmp6_dump((uint8_t *)na, msg_len);
 #endif
     //return ip6_output(PROTOCOL_ICMPV6, buf, msg_len, res->ip6_addr.addr, dst);

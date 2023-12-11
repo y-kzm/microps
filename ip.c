@@ -182,7 +182,7 @@ ip_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "        sum: 0x%04x (0x%04x)\n", ntoh16(hdr->sum), ntoh16(cksum16((uint16_t *)data, hlen, -hdr->sum)));
     fprintf(stderr, "        src: %s\n", ip_addr_ntop(hdr->src, addr, sizeof(addr)));
     fprintf(stderr, "        dst: %s\n", ip_addr_ntop(hdr->dst, addr, sizeof(addr)));
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
     hexdump(stderr, data, len);
 #endif
     funlockfile(stderr);
@@ -379,7 +379,7 @@ ip_input(const uint8_t *data, size_t len, struct net_device *dev)
     }
     debugf("dev=%s, iface=%s, protocol=%s(0x%02x), len=%u",
         dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), ip_protocol_name(hdr->protocol), hdr->protocol, total);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     ip_dump(data, total);
 #endif
     for (proto = protocols; proto; proto = proto->next) {
@@ -435,7 +435,7 @@ ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, si
     memcpy(hdr+1, data, len);
     debugf("dev=%s, iface=%s, protocol=%s(0x%02x), len=%u",
         NET_IFACE(iface)->dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), ip_protocol_name(protocol), protocol, total);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     ip_dump(buf, total);
 #endif
     return ip_output_device(iface, buf, total, nexthop);

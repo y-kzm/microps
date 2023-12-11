@@ -7,11 +7,18 @@
 #define ICMPV6_HDR_SIZE 8
 #define ICMPV6_BUFSIZ IPV6_PAYLOAD_SIZE_MAX
 
+/* see https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml */
 /* error messages */
 #define ICMPV6_TYPE_DEST_UNREACH    1
 #define ICMPV6_TYPE_TOO_BIG         2 
 #define ICMPV6_TYPE_TIME_EXCEEDED   3
 #define ICMPV6_TYPE_PARAM_PROBLEM   4
+
+/* code */
+#define ICMPV6_CODE_NO_ROUTE        0
+#define ICMPV6_CODE_ADDR_UNREACH    3
+#define ICMPV6_CODE_PORT_UNREACH    4
+#define ICMPV6_CODE_HLIM_EXCEEDED   0
 
 /* informational messages */
 #define ICMPV6_TYPE_ECHO_REQUEST    128
@@ -21,6 +28,8 @@
 #define ICMPV6_TYPE_NEIGHBOR_SOL    135
 #define ICMPV6_TYPE_NEIGHBOR_ADV    136
 #define ICMPV6_TYPE_REDIRECT        137
+
+
 
 struct icmp6_hdr {
 	uint8_t	icmp6_type;	    

@@ -82,7 +82,7 @@ tcp_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "        wnd: %u\n", ntoh16(hdr->wnd));
     fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->sum));
     fprintf(stderr, "         up: %u\n", ntoh16(hdr->up));
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
     hexdump(stderr, data, len);
 #endif
     funlockfile(stderr);
@@ -128,7 +128,7 @@ tcp_pcb_release(struct tcp_pcb *pcb)
         tcp_pcb_release(est);
     }
     debugf("released, local=%s, foreign=%s",
-        ip_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)), ip_endpoint_ntop(&pcb->foreign, ep2, sizeof(ep2))); // TODO: foreignにfamily情報が格納されていない
+        ip_endpoint_ntop(&pcb->local, ep1, sizeof(ep1)), ip_endpoint_ntop(&pcb->foreign, ep2, sizeof(ep2))); // TODO: foreignにfamily情報が格納されていない -> OK
     memset(pcb, 0, sizeof(*pcb));
 }
 
@@ -153,6 +153,7 @@ tcp_pcb_select(struct ip_endpoint *local, struct ip_endpoint *foreign)
                         listen_pcb = pcb;
                     }
                 }
+                pcb->foreign.addr.family = AF_INET4;
             }
             break;
         case AF_INET6:
@@ -170,6 +171,7 @@ tcp_pcb_select(struct ip_endpoint *local, struct ip_endpoint *foreign)
                         listen_pcb = pcb;
                     }
                 }
+                pcb->foreign.addr.family = AF_INET6;
             }
             break;
         default:
@@ -319,7 +321,7 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
         hdr->sum = cksum16((uint16_t *)hdr, total, psum);
         debugf("%s => %s, len=%u (payload=%zu)",
             ip_endpoint_ntop(local, ep1, sizeof(ep1)), ip_endpoint_ntop(foreign, ep2, sizeof(ep2)), total, len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
         tcp_dump((uint8_t *)hdr, total);
 #endif
         if (ip_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr4, foreign->addr.s_addr4) == -1) {
@@ -348,7 +350,7 @@ tcp_output_segment(uint32_t seq, uint32_t ack, uint8_t flg, uint16_t wnd, uint8_
         hdr->sum = cksum16((uint16_t *)hdr, total, psum);
         debugf("%s => %s, len=%u (payload=%zu)",
             ip_endpoint_ntop(local, ep3, sizeof(ep3)), ip_endpoint_ntop(foreign, ep4, sizeof(ep4)), total, len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
         tcp_dump((uint8_t *)hdr, total);
 #endif
         if (ip6_output(PROTOCOL_TCP, (uint8_t *)hdr, total, local->addr.s_addr6, foreign->addr.s_addr6) == -1) {
@@ -781,6 +783,10 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
         errorf("too short");
         return;
     }
+    if ((int)len > iface->iface.dev->mtu - IPV6_HDR_SIZE) {
+        errorf("too big");
+        return;        
+    }
     hdr = (struct tcp_hdr *)data;
 
     tcp4_src.s_addr4 = src;
@@ -807,7 +813,7 @@ tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
         ip_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     tcp_dump(data, len);
 #endif
     local.addr = tcp4_dst;
@@ -845,14 +851,18 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     ip_addr_storage tcp6_src, tcp6_dst;
 
     if (len < sizeof(*hdr)) {
-        errorf("too short");
+        errorf("too short: %zu", len);
         return;
+    }
+    if ((int)len > iface->iface.dev->mtu - IPV6_HDR_SIZE) {
+        errorf("too big: %zu", len);
+        return;        
     }
     hdr = (struct tcp_hdr *)data;
 
-    tcp6_src.s_addr6 = src;
+    IPV6_ADDR_COPY(&tcp6_src.s_addr6, &src, IPV6_ADDR_LEN);
     tcp6_src.family = AF_INET6;
-    tcp6_dst.s_addr6 = dst;
+    IPV6_ADDR_COPY(&tcp6_dst.s_addr6, &dst, IPV6_ADDR_LEN);
     tcp6_dst.family = AF_INET6;
 
     /* verify checksum value */
@@ -875,7 +885,7 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
         ip6_addr_ntop(src, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     tcp_dump(data, len);
 #endif
     local.addr = tcp6_dst;
@@ -897,7 +907,7 @@ tcp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     mutex_lock(&mutex);
     tcp_segment_arrives(&seg, hdr->flg, (uint8_t *)hdr + hlen, len - hlen, &local, &foreign);
     mutex_unlock(&mutex);
-    
+
     return;
 }
 

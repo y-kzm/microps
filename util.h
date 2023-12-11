@@ -6,10 +6,15 @@
 #include <unistd.h>
 
 /* flags for debug */
-//#define HEXDUMP
-//#define HDRDUMP
-//#define NDCACHEDUMP
-//#define FIBDUMP
+#define ENABLE_HEXDUMP
+#define ENABLE_HDRDUMP
+#define ENABLE_NDCACHEDUMP
+#define ENABLE_FIBDUMP
+
+#define ENNABLE_PRINT_ERROR
+#define ENNABLE_PRINT_WARNIG
+#define ENNABLE_PRINT_INFO
+#define ENNABLE_PRINT_DEBUG
 
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
@@ -42,12 +47,28 @@
         }                                 \
     } while(0);
 
+#ifdef ENNABLE_PRINT_ERROR
 #define errorf(...) lprintf(stderr, 'E', __FILE__, __LINE__, __func__, __VA_ARGS__)
+#else
+#define errorf(...)
+#endif
+#ifdef ENNABLE_PRINT_WARNING
 #define warnf(...) lprintf(stderr, 'W', __FILE__, __LINE__, __func__, __VA_ARGS__)
+#else
+#define warnf(...)
+#endif
+#ifdef ENNABLE_PRINT_INFO
 #define infof(...) lprintf(stderr, 'I', __FILE__, __LINE__, __func__, __VA_ARGS__)
+#else
+#define infof(...)
+#endif
+#ifdef ENNABLE_PRINT_DEBUG
 #define debugf(...) lprintf(stderr, 'D', __FILE__, __LINE__, __func__, __VA_ARGS__)
+#else
+#define debugf(...)
+#endif
 
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
 #define debugdump(...) hexdump(stderr, __VA_ARGS__)
 #else
 #define debugdump(...)

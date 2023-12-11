@@ -125,7 +125,7 @@ icmp6_dump(const uint8_t *data, size_t len)
     default:
         break;
     }
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
     hexdump(stderr, data, len);
 #endif
     funlockfile(stderr);
@@ -146,7 +146,11 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     char addr3[IPV6_ADDR_STR_LEN];
 
     if (len < sizeof(*hdr)) {
-        errorf("too short");
+        errorf("too short: %zu", len);
+        return;        
+    }
+    if ((int)len > iface->iface.dev->mtu - IPV6_HDR_SIZE) {
+        errorf("too big: %zu", len);
         return;        
     }
 
@@ -169,7 +173,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, len,
         ip6_addr_ntop(iface->ip6_addr.addr, addr3, sizeof(addr3)));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     icmp6_dump(data, len);
 #endif
         
@@ -285,7 +289,7 @@ icmp6_output(uint8_t type, uint8_t code, uint32_t flags, const uint8_t *data, si
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         hdr->icmp6_type, len, sizeof(*hdr), total);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     icmp6_dump((uint8_t *)hdr, total);
 #endif
     return ip6_output(PROTOCOL_ICMPV6, buf, total, src, dst);

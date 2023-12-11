@@ -18,12 +18,7 @@
 #include "driver/loopback.h"
 #include "driver/ether_tap.h"
 
-/* listen device */
-#define ETHER_DEVICE_NAME             "tap0" /* device name */
-#define ETHER_DEVICE_HW_ADDR          "00:00:5e:00:53:02" /* MAC address */
-#define ETHER_DEVICE_IPV6_ADDR        "2001:db8::2" /* listen address */
-#define ETHER_DEVICE_IPV6_PREFIXLEN   64 /* prefix length */
-#define IPV6_DEFAULT_GATEWAY          "2001:db8::1" /* gateway address */
+#include "config.h"
 
 static volatile sig_atomic_t terminate;
 
@@ -48,12 +43,12 @@ setup(void)
     }
 
     /* listen device */
-    dev = ether_tap_init(ETHER_DEVICE_NAME, ETHER_DEVICE_HW_ADDR);
+    dev = ether_tap_init(ETHER_DEVICES_NAME[0], ETHER_DEVICES_HW_ADDR[0]);
     if (!dev) {
         errorf("ether_pcap_init() failure");
         return -1;
     }
-    iface = ip6_iface_alloc(ETHER_DEVICE_IPV6_ADDR, ETHER_DEVICE_IPV6_PREFIXLEN, SLAAC_DISABLE);
+    iface = ip6_iface_alloc(ETHER_DEVICES_IPV6_ADDR[0], ETHER_DEVICES_IPV6_PREFIXLEN[0], SLAAC_DISABLE);
     if (!iface) {
         errorf("ip6_iface_alloc() failure");
         return -1;

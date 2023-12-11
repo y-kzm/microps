@@ -210,7 +210,7 @@ ip6_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "       hlim: %u\n", hdr->ip6_hlim);
     fprintf(stderr, "        src: %s\n", ip6_addr_ntop(hdr->ip6_src, addr, sizeof(addr)));
     fprintf(stderr, "        dst: %s\n", ip6_addr_ntop(hdr->ip6_dst, addr, sizeof(addr)));
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
     hexdump(stderr, data, len);
 #endif
     funlockfile(stderr);
@@ -644,18 +644,21 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     /* check against address spoofing/corruption */
     if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_src) || 
         IPV6_ADDR_IS_UNSPECIFIED(&hdr->ip6_dst)) {
-            errorf("bad addr");
+            errorf("ip address error: %s => %s", 
+                ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)));
             return;
     }
     if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst) && 
         (IPV6_ADDR_MC_SCOPE(&hdr->ip6_dst) == IPV6_ADDR_SCOPE_INTFACELOCAL)) {
-            errorf("bad addr");
+            errorf("ip address error: %s => %s", 
+                ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)));
             return;
     }
     if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst) &&
         (IPV6_ADDR_MC_SCOPE(&hdr->ip6_dst) == 0)) {
             /* RFC4291 2.7 */
-            errorf("bad addr");
+            errorf("ip address error: %s => %s", 
+                ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)));
             return;
     }
 
@@ -680,9 +683,10 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         }
     }
 
+    
     debugf("%s => %s, dev=%s, len=%u" ,ip6_addr_ntop(hdr->ip6_src, addr1, sizeof(addr1)), 
     ip6_addr_ntop(hdr->ip6_dst, addr2, sizeof(addr2)), dev->name, ntoh16(hdr->ip6_plen));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     ip6_dump(data, len);
 #endif
 
@@ -731,7 +735,7 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     char addr1[IPV6_ADDR_STR_LEN];
 
     hdr = (struct ip6_hdr *)buf;
-    hdr->ip6_flow = 0x0000;     // TODO: FlowLabelの生成: ポート番号はどうやって参照する？ 上位層がICMPの場合はどうする？
+    hdr->ip6_flow = 0x0000;     // TODO: FlowLabelの生成: ポート番号はどうやって参照する？ 上位層がICMPの場合はどうする？ -> mbuf..
     hdr->ip6_vfc = (IP_VERSION_IPV6 << 4);
     plen = len;
     hdr->ip6_plen = hton16(plen);
@@ -742,7 +746,7 @@ ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size
     memcpy(hdr + 1, data, len);  
     debugf("dev=%s, iface=%s, len=%u +hdr_len=%u",
         NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->ip6_addr.addr, addr1, sizeof(addr1)), len, sizeof(*hdr));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     ip6_dump(buf, sizeof(*hdr));
 #endif
 
@@ -804,15 +808,21 @@ ip6_forward(const uint8_t *data, size_t len, struct net_device *dev)
     struct ip6_route *route;
     struct ip6_hdr *hdr;
     ip6_addr_t nexthop;
+    struct ip6_iface *res;
     char addr1[IPV6_ADDR_STR_LEN];
     char addr2[IPV6_ADDR_STR_LEN];
 
     hdr = (struct ip6_hdr *)data;
-    
+
+    res = ip6_rule_addr_select(hdr->ip6_dst);
+    if (res == NULL) {
+        warnf("no appropriate source address");
+    }
+
     /* check hlim */
     if (!(hdr->ip6_hlim - 1)) {
         errorf("drop, hop limit: %u", hdr->ip6_hlim);
-        // send icmpv6
+        icmp6_output(ICMPV6_TYPE_TIME_EXCEEDED, ICMPV6_CODE_HLIM_EXCEEDED, 0, (uint8_t *)hdr, len, res->ip6_addr.addr, hdr->ip6_src);
         return -1;
     }
 
@@ -820,14 +830,14 @@ ip6_forward(const uint8_t *data, size_t len, struct net_device *dev)
     route = ip6_route_lookup(hdr->ip6_dst);
     if (!route) {
         errorf("drop, no route: %s", ip6_addr_ntop(hdr->ip6_dst, addr1, sizeof(addr1)));
-        // send icmpv6
+        icmp6_output(ICMPV6_TYPE_DEST_UNREACH, ICMPV6_CODE_NO_ROUTE, 0, (uint8_t *)hdr, len, res->ip6_addr.addr, hdr->ip6_src);
         return -1;
     }
 
     /* packet too big */
     if (dev->mtu < IPV6_HDR_SIZE + len) {
         errorf("too long, dev=%s, mtu=%u < %zu", dev->name, dev->mtu, IPV6_HDR_SIZE + len);
-        // send icmpv6
+        icmp6_output(ICMPV6_TYPE_TOO_BIG, 0, 0, (uint8_t *)hdr, len, res->ip6_addr.addr, hdr->ip6_src);
         return -1;
     }  
 
@@ -841,7 +851,6 @@ ip6_forward(const uint8_t *data, size_t len, struct net_device *dev)
     nexthop = (!IPV6_ADDR_EQUAL(&route->nexthop, &IPV6_UNSPECIFIED_ADDR) && !IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst)) ? route->nexthop : hdr->ip6_dst;
     if (ip6_output_device(route->iface, data, len, nexthop) == -1) {
         errorf("ip6_output_device() failure");
-        // send icmpv6
         return -1;
     }
 

@@ -93,7 +93,7 @@ ether_addr_create_eui64(const uint8_t *hwaddr, uint8_t *eui64)
     eui64[0] ^= 0x02;
 }
 
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
 static void
 ether_dump(const uint8_t *frame, size_t flen)
 {
@@ -105,7 +105,7 @@ ether_dump(const uint8_t *frame, size_t flen)
     fprintf(stderr, "        src: %s\n", ether_addr_ntop(hdr->src, addr, sizeof(addr)));
     fprintf(stderr, "        dst: %s\n", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
     fprintf(stderr, "       type: 0x%04x (%s)\n", ntoh16(hdr->type), ether_type_ntoa(hdr->type));
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
     hexdump(stderr, frame, flen);
 #endif
     funlockfile(stderr);
@@ -134,7 +134,7 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
         ether_addr_ntop(hdr->src, addr1, sizeof(addr1)), 
         ether_addr_ntop(hdr->dst, addr2, sizeof(addr2)), dev->name, 
         ether_type_ntoa(hdr->type), type, flen);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     ether_dump(frame, flen);
 #endif
     return callback(dev, frame, flen) == (ssize_t)flen ? 0 : -1;
@@ -170,7 +170,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
             ether_addr_ntop(hdr->src, addr1, sizeof(addr1)), 
             ether_addr_ntop(hdr->dst, addr2, sizeof(addr2)), dev->name, 
             ether_type_ntoa(hdr->type), type, flen);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     ether_dump(frame, flen);
 #endif
     return net_input_handler(type, (uint8_t *)(hdr + 1), flen - sizeof(*hdr), dev);

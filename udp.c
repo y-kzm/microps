@@ -42,7 +42,7 @@ udp_dump(const uint8_t *data, size_t len)
     fprintf(stderr, "        dst: %u\n", ntoh16(hdr->dst));
     fprintf(stderr, "        len: %u\n", ntoh16(hdr->len));
     fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->sum));
-#ifdef HEXDUMP
+#ifdef ENABLE_HEXDUMP
     hexdump(stderr, data, len);
 #endif
     funlockfile(stderr);
@@ -182,7 +182,7 @@ udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
         ip_addr_ntop(udp4_src.s_addr4, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip_addr_ntop(udp4_dst.s_addr4, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     udp_dump(data, len);
 #endif
     mutex_lock(&mutex);
@@ -212,6 +212,7 @@ udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
     mutex_unlock(&mutex);
 }
 
+#include "icmp6.h"
 static void
 udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface)
 {
@@ -225,7 +226,7 @@ udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
     ip_addr_storage udp6_src, udp6_dst;
 
     if (len < sizeof(*hdr)) {
-        errorf("too short");
+        errorf("too short: %zu", len);
         return;
     }
     hdr = (struct udp_hdr *)data;
@@ -252,7 +253,7 @@ udp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, stru
         ip6_addr_ntop(udp6_src.s_addr6, addr1, sizeof(addr1)), ntoh16(hdr->src),
         ip6_addr_ntop(udp6_dst.s_addr6, addr2, sizeof(addr2)), ntoh16(hdr->dst),
         len, len - sizeof(*hdr));
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     udp_dump(data, len);
 #endif
     mutex_lock(&mutex);
@@ -311,7 +312,7 @@ udp_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *dat
     hdr->sum = cksum16((uint16_t *)hdr, total, psum);
     debugf("%s => %s, len=%u (payload=%zu)",
         ip_endpoint_ntop(src, ep1, sizeof(ep1)), ip_endpoint_ntop(dst, ep2, sizeof(ep2)), total, len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     udp_dump((uint8_t *)hdr, total);
 #endif
     if (ip_output(PROTOCOL_UDP, (uint8_t *)hdr, total, src->addr.s_addr4, dst->addr.s_addr4) == -1) {
@@ -355,7 +356,7 @@ udp6_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *da
     hdr->sum = cksum16((uint16_t *)buf, total, psum);
     debugf("%s => %s, len=%zu (payload=%zu)",
         ip_endpoint_ntop(src, ep1, sizeof(ep1)), ip_endpoint_ntop(dst, ep2, sizeof(ep2)), total, len);
-#ifdef HDRDUMP
+#ifdef ENABLE_HDRDUMP
     udp_dump((uint8_t *)hdr, total);
 #endif
     if (ip6_output(PROTOCOL_UDP, (uint8_t *)hdr, total, src->addr.s_addr6, dst->addr.s_addr6) == -1) {
