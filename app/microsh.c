@@ -15,7 +15,8 @@
 #include "slaac.h"
 
 #include "driver/loopback.h"
-#include "driver/ether_pcap.h"
+//#include "driver/ether_pcap.h"
+#include "driver/ether_tap.h"
 #include "app/config.h"
 
 static int buitin_help();
@@ -74,7 +75,8 @@ setup(void)
 
     /* devices */
     while (i < ETHER_DEVICES_NUM) {
-        dev = ether_pcap_init(ETHER_DEVICES_NAME[i], ETHER_DEVICES_HW_ADDR[i]);
+        //dev = ether_pcap_init(ETHER_DEVICES_NAME[i], ETHER_DEVICES_HW_ADDR[i]);
+        dev = ether_tap_init(ETHER_DEVICES_NAME[i], ETHER_DEVICES_HW_ADDR[i]);
         if (!dev) {
             errorf("ether_pcap_init() failure");
             return -1;

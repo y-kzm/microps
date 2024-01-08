@@ -73,7 +73,7 @@ typedef struct {
 
 struct ip6_iface {
     struct net_iface iface;
-    struct ip6_iface *next; /* unicast */
+    struct ip6_iface *next;
     struct {
         uint8_t state;
         uint8_t rdns; /* define only */
@@ -127,7 +127,7 @@ ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
 extern void 
-ip6_addr_create_solicit_mcastaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
+ip6_addr_create_solicited_multicast(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr);
 extern void
 ip6_addr_create_global(const uint8_t *eui64, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr);
 

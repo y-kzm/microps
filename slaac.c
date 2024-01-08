@@ -16,7 +16,7 @@
  */
 
 static void
-slaac_addr_create_globaladdr(const uint8_t *hwaddr, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
+slaac_addr_create_global(const uint8_t *hwaddr, const ip6_addr_t prefix, const uint8_t prefixlen, ip6_addr_t *ip6addr)
 {
     uint8_t eui64[ETHER_EUI64_ID_LEN];
 
@@ -33,34 +33,33 @@ slaac_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, 
 {
     struct nd_router_adv *ra;
     struct nd_opt_prefixinfo *opt_pi;
-    struct ip6_iface *slaac_iface;
-    ip6_addr_t ip6addr;
+    struct ip6_iface *new_iface;
+    ip6_addr_t new_addr;
     char addr[IPV6_ADDR_STR_LEN];
 
     ra = (struct nd_router_adv *)data;
     opt_pi = nd6_options((uint8_t *)(ra + 1), len - sizeof(*ra), ND_OPT_PREFIX_INFORMATION);
 
-    slaac_addr_create_globaladdr(iface->iface.dev->addr, opt_pi->prefix, opt_pi->prefixlen, &ip6addr);
-    slaac_iface = ip6_iface_alloc(ip6_addr_ntop(ip6addr, addr, sizeof(addr)), opt_pi->prefixlen, 0);
-    if (ip6_iface_register(iface->iface.dev, slaac_iface) == -1) {
+    slaac_addr_create_global(iface->iface.dev->addr, opt_pi->prefix, opt_pi->prefixlen, &new_addr);
+    // TODO: DADでアドレス重複確認
+    new_iface = ip6_iface_alloc(ip6_addr_ntop(new_addr, addr, sizeof(addr)), opt_pi->prefixlen, 0);
+    if (ip6_iface_register(iface->iface.dev, new_iface) == -1) {
         errorf("ip6_iface_register() failure");
         return -1;
     }
 
-    // TODO: DAD & デフォルトルートを設定
-
-    if (ip6_route_set_multicast(slaac_iface) != 0) {
+    if (ip6_route_set_multicast(new_iface) != 0) {
         errorf("ip6_route_set_multicast() failure");
         return -1;
     }
-    if (ip6_route_set_default_gateway(slaac_iface, ip6_addr_ntop(src, addr, sizeof(addr))) == -1) {
+    if (ip6_route_set_default_gateway(new_iface, ip6_addr_ntop(src, addr, sizeof(addr))) == -1) {
         errorf("ip6_route_set_default_gateway() failure");
         return -1;
     }
 
     /* done */
     infof("created, global address by slaac=%s, dev=%s", 
-        ip6_addr_ntop(slaac_iface->ip6_addr.addr, addr, sizeof(addr)), slaac_iface->iface.dev->name);
+        ip6_addr_ntop(new_iface->ip6_addr.addr, addr, sizeof(addr)), new_iface->iface.dev->name);
     iface->slaac.state = SLAAC_DONE;
 
     return 0;

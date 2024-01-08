@@ -12,9 +12,9 @@
 //#define ENABLE_FIBDUMP
 
 #define ENNABLE_PRINT_ERROR
-//#define ENNABLE_PRINT_WARNIG
+#define ENNABLE_PRINT_WARNIG
 #define ENNABLE_PRINT_INFO
-//#define ENNABLE_PRINT_DEBUG
+#define ENNABLE_PRINT_DEBUG
 
 #ifndef MAX
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
