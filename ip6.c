@@ -259,7 +259,7 @@ ip6_fib_dump(FILE *fp)
 
 /* Brief: generate multicast addr from mac addr by UEI-64 */
 static void
-ip6_addr_mcastaddr_to_hwaddr(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
+ip6_addr_multicast_to_hw(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
 {
     char addr[IPV6_ADDR_STR_LEN];
 
@@ -277,7 +277,7 @@ ip6_addr_mcastaddr_to_hwaddr(const ip6_addr_t ip6mcaddr, uint8_t *hwaddr)
 }
 
 void 
-ip6_addr_create_solicit_mcastaddr(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr)
+ip6_addr_create_solicited_multicast(const ip6_addr_t ip6addr, ip6_addr_t *solicited_node_mcaddr)
 {
     char addr[IPV6_ADDR_STR_LEN];
 
@@ -301,10 +301,10 @@ ip6_addr_create_global(const uint8_t *eui64, const ip6_addr_t prefix, const uint
     ip6addr->addr16[2] = prefix.addr16[2];
     ip6addr->addr16[3] = prefix.addr16[3];
 
-    ip6addr->addr16[4] = eui64[0];
-    ip6addr->addr16[5] = eui64[1];
-    ip6addr->addr16[6] = eui64[2];
-    ip6addr->addr16[7] = eui64[3];
+    ip6addr->addr16[4] = eui64[0] << 8 | eui64[1];
+    ip6addr->addr16[5] = eui64[2] << 8 | eui64[3];
+    ip6addr->addr16[6] = eui64[4] << 8 | eui64[5];
+    ip6addr->addr16[7] = eui64[6] << 8 | eui64[7];
 }
 
 /* Brief: hwaddr to eui-64 addr to link local addr */
@@ -320,10 +320,10 @@ ip6_addr_create_linklocal(const uint8_t *hwaddr, ip6_addr_t *ip6addr)
     ip6addr->addr16[2] = hton16(0x0000);
     ip6addr->addr16[3] = hton16(0x0000);
 
-    ip6addr->addr16[4] = eui64[0];
-    ip6addr->addr16[5] = eui64[1];
-    ip6addr->addr16[6] = eui64[2];
-    ip6addr->addr16[7] = eui64[3];
+    ip6addr->addr16[4] = eui64[0] << 8 | eui64[1];
+    ip6addr->addr16[5] = eui64[2] << 8 | eui64[3];
+    ip6addr->addr16[6] = eui64[4] << 8 | eui64[5];
+    ip6addr->addr16[7] = eui64[6] << 8 | eui64[7];
 }
 
 /* Brief: prefix length to netmask */
@@ -424,7 +424,6 @@ ip6_route_lookup(ip6_addr_t dst)
 }
 
 /* NOTE: must not be call after net_run() */
-//static struct ip6_route *
 static int
 ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct ip6_iface *iface)
 {
@@ -437,14 +436,14 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
     if (res != NULL) {
         if (IPV6_ADDR_EQUAL(&res->network, &network) && IPV6_ADDR_EQUAL(&res->netmask, &netmask)) {
             debugf("Route already exists: %s", ip6_addr_ntop(network, addr1, sizeof(addr1)));
-            return 1;
+            return 1; /* already exist */
         }
     }
 
     route = memory_alloc(sizeof(*route));
     if (!route) {
         errorf("memory_alloc() failure");
-        return -1;
+        return -1; /* failure */
     }
     
     route->network = network;
@@ -460,8 +459,7 @@ ip6_route_add(ip6_addr_t network, ip6_addr_t netmask, ip6_addr_t nexthop, struct
         ip6_addr_ntop(route->iface->ip6_addr.addr, addr4, sizeof(addr4)),
         NET_IFACE(iface)->dev->name
     );
-    return 0;
-    //return route;
+    return 0; /* success */
 }
 
 /* NOTE: must not be call after net_run() */
@@ -690,7 +688,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
                 break;
             }
             if (IPV6_ADDR_IS_MULTICAST(&hdr->ip6_dst)) {
-                ip6_addr_create_solicit_mcastaddr(iface->ip6_addr.addr, &mcaaddr);
+                ip6_addr_create_solicited_multicast(iface->ip6_addr.addr, &mcaaddr);
                 if (IPV6_ADDR_EQUAL(&mcaaddr, &hdr->ip6_dst)) {
                     break;
                 }
@@ -728,7 +726,7 @@ ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_
 
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_RESOLVE) {
         if (IPV6_ADDR_IS_MULTICAST(&dst)) {
-            ip6_addr_mcastaddr_to_hwaddr(dst, hwaddr);
+            ip6_addr_multicast_to_hw(dst, hwaddr);
         } else {
             ret = nd6_resolve(iface, dst, hwaddr);
             // TODO: 解決できなかったときにdataをキューで保持

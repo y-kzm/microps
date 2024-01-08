@@ -83,7 +83,6 @@ nd6_cache_dump(FILE *fp)
     char addr2[ETHER_ADDR_STR_LEN];
 
     flockfile(fp);
-    //fprintf(fp, "=============================================================================\n");
     for (entry = caches; entry < tailof(caches); entry++) {
         if (entry->state != ND6_STATE_NONE){
             fprintf(fp, " %s lladdr %s state %s ", 
@@ -488,8 +487,11 @@ nd6_ra_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, st
         ip6_addr_ntop(src, addr1, sizeof(addr1)),
         ip6_addr_ntop(dst, addr2, sizeof(addr2)),
         ra->nd_ra_type, len);
+        
     if (iface->slaac.state != SLAAC_DONE && iface->slaac.state != SLAAC_DISABLE) {
         slaac_ra_input(data, len, src, dst, iface);
+    } else {
+        /* ignore */
     }
 }
 
@@ -606,7 +608,7 @@ nd6_ns_output(struct ip6_iface *iface, const ip6_addr_t target)
     /* calculate the checksum */
     memset(&pseudo, 0, sizeof(struct ip6_pseudo_hdr));
     IPV6_ADDR_COPY(&pseudo.src, &iface->ip6_addr.addr, IPV6_ADDR_LEN);
-    ip6_addr_create_solicit_mcastaddr(target, &pseudo.dst);
+    ip6_addr_create_solicited_multicast(target, &pseudo.dst);
     pseudo.len = hton16(msg_len);
     pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
     pseudo.nxt = PROTOCOL_ICMPV6;
