@@ -51,6 +51,8 @@ extern int
 lprintf(FILE *fp, int level, const char *file, int line, const char *func, const char *fmt, ...);
 extern void
 hexdump(FILE *fp, const void *data, size_t size);
+extern int
+hex_digit_value (char ch);
 
 struct queue_entry;
 

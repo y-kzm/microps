@@ -70,6 +70,18 @@ hexdump(FILE *fp, const void *data, size_t size)
     funlockfile(fp);
 }
 
+int
+hex_digit_value(char ch)
+{
+  if ('0' <= ch && ch <= '9')
+    return ch - '0';
+  if ('a' <= ch && ch <= 'f')
+    return ch - 'a' + 10;
+  if ('A' <= ch && ch <= 'F')
+    return ch - 'A' + 10;
+  return -1;
+}
+
 struct queue_entry {
     struct queue_entry *next;
     void *data;
