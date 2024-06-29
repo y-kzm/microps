@@ -4,6 +4,7 @@ APPS = app/udpc.exe \
        app/tcps.exe \
 
 TESTS = test/test.exe \
+        test/test6.exe \
 
 DRIVERS = driver/null.o \
           driver/loopback.o \
@@ -13,6 +14,7 @@ OBJS = util.o \
        ether.o \
        arp.o \
        ip.o \
+       ip6.o \
        icmp.o \
        udp.o \
        tcp.o \
@@ -42,7 +44,7 @@ all: $(APPS) $(TESTS)
 $(APPS): %.exe : %.o $(OBJS) $(DRIVERS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(TESTS): %.exe : %.o $(OBJS) $(DRIVERS) test/test.h
+$(TESTS): %.exe : %.o $(OBJS) $(DRIVERS) test/test.h test/test6.h
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 .c.o:
