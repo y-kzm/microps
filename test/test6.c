@@ -59,8 +59,11 @@ main(int argc, char *argv[])
     /*
      * Test Code
      */
+    ip6_addr_t src, dst;
+    ip6_addr_pton(LOOPBACK_IPV6_ADDR, &src);
+    dst = src;
     while (!terminate) {
-        if (net_device_output(dev, NET_PROTOCOL_TYPE_IPV6, test_data, sizeof(test_data), NULL) == -1) {
+        if (ip6_output(58, test_data, sizeof(test_data), src, dst) == -1) {
             errorf("net_device_output() failure");
             break;
         }

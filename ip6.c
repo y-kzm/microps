@@ -7,7 +7,9 @@
 
 #include "util.h"
 #include "net.h"
+#include "ether.h"
 #include "ip6.h"
+
 
 struct ip6_hdr {
     uint32_t vtf;  /* ver(4) tc(8) flowlabel(20) */
@@ -204,6 +206,19 @@ ip6_iface_register(struct net_device *dev, struct ip6_iface *iface)
     return 0;
 }
 
+struct ip6_iface *
+ip6_iface_select(ip6_addr_t addr)
+{
+    struct ip6_iface *entry;
+
+    for (entry = ifaces; entry; entry = entry->next) {
+        if (IPV6_ADDR_COMP(&entry->addr, &addr, IPV6_ADDR_LEN)) {
+            break;
+        }
+    }
+    return entry;
+}
+
 static void
 ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 {
@@ -226,6 +241,76 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     ip6_dump(data, len);
 }
 
+static int
+ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
+{
+    uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
+
+    /* NDP is not implemented */
+    if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_ARP) {
+        if (ip6_get_mcaddr_scope(&dst) == IPV6_ADDR_SCOPE_LINKLOCAL) {
+            //  Find multicast mac addr from dst addr (solicited node addr)
+        } else {
+            // if (!nd6_resolve(iface, dst, hwaddr)) {
+            //     return -1;
+            // }
+        }
+    }
+    /* Hard coding for debug */
+    ether_addr_pton("ce:44:e3:98:83:e4", hwaddr);
+
+    return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);
+}
+
+static ssize_t
+ip6_output_core(struct ip6_iface *iface, uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
+{
+    uint8_t buf[IPV6_TOTAL_SIZE_MAX];
+    struct ip6_hdr *hdr;
+    uint16_t plen;
+    char addr[IPV6_ADDR_STR_LEN];
+
+    hdr = (struct ip6_hdr *)buf;
+    hdr->vtf = hton32((IP_VERSION_IPV6 << 28));
+    plen = len;
+    hdr->plen = hton16(plen);
+    hdr->next = next;
+    hdr->hlim = 0xff;
+    IPV6_ADDR_COPY(&hdr->src, &src, IPV6_ADDR_LEN);
+    IPV6_ADDR_COPY(&hdr->dst, &dst, IPV6_ADDR_LEN);
+    memcpy(hdr + 1, data, len);
+    debugf("dev=%s, iface=%s, next=%s(0x%02x), len=%u",
+        NET_IFACE(iface)->dev->name, ip6_addr_ntop(iface->addr, addr, sizeof(addr)), ip6_protocol_name(next), next, len + IPV6_HDR_SIZE);
+    ip6_dump(buf, len + IPV6_HDR_SIZE);
+
+    return ip6_output_device(iface, buf, len + IPV6_HDR_SIZE, dst);
+}
+
+ssize_t
+ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
+{
+    struct ip6_iface *iface;
+    char addr[IPV6_ADDR_STR_LEN];
+
+    iface = ip6_iface_select(src);
+    if (!iface) {
+        errorf("iface not found, src=%s", ip6_addr_ntop(src, addr, sizeof(addr)));
+        return -1;
+    }
+
+    if (NET_IFACE(iface)->dev->mtu < IPV6_HDR_SIZE + len) {
+        errorf("too long, dev=%s, mtu=%u len=%zu",
+            NET_IFACE(iface)->dev->name, NET_IFACE(iface)->dev->mtu, IPV6_HDR_SIZE + len);
+        return -1;
+    }
+    if (ip6_output_core(iface, next, data, len, iface->addr, dst) == -1) {
+        errorf("ip6_output_core() failure");
+        return -1;
+    }
+
+    return len;
+}
+
 #define IPV6_ADDR_IS_MULTICAST(addr)   IPV6_ADDR_COMP(addr, &IPV6_MULTICAST_ADDR_PREFIX, 1)
 #define IPV6_ADDR_IS_UNSPECIFIED(addr) IPV6_ADDR_COMP(addr, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN)
 #define IPV6_ADDR_IS_LOOPBACK(addr)    IPV6_ADDR_COMP(addr, &IPV6_LOOPBACK_ADDR, IPV6_ADDR_LEN)
@@ -235,15 +320,22 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 uint32_t 
 ip6_get_addr_scope(const ip6_addr_t *addr)
 {
-    if (IPV6_ADDR_IS_MULTICAST(addr)) {
-        return IPV6_ADDR_MC_SCOPE(addr);
-    } else if (IPV6_ADDR_IS_LOOPBACK(addr)) {
+    if (IPV6_ADDR_IS_LOOPBACK(addr)) {
         return IPV6_ADDR_SCOPE_INTFACELOCAL;
     } else if (IPV6_ADDR_IS_LINKLOCAL(addr)) {
         return IPV6_ADDR_SCOPE_LINKLOCAL;
     } else {
         return IPV6_ADDR_SCOPE_GLOBAL;
     }
+}
+
+uint32_t 
+ip6_get_mcaddr_scope(const ip6_addr_t *addr)
+{
+    if (!IPV6_ADDR_IS_MULTICAST(addr)) {
+        return -1;
+    }
+    return IPV6_ADDR_MC_SCOPE(addr);
 }
 
 char *
