@@ -26,7 +26,8 @@ on_signal(int s)
 int
 main(int argc, char *argv[])
 {
-     struct net_device *dev;
+    struct net_device *dev;
+    struct ip6_iface *iface;
 
     /*
      * Setup protocol stack
@@ -39,6 +40,16 @@ main(int argc, char *argv[])
     dev = loopback_init();
     if (!dev) {
         errorf("loopback_init() failure");
+        return -1;
+    }
+
+    iface = ip6_iface_alloc(LOOPBACK_IPV6_ADDR, LOOPBACK_IPV6_PREFIX_LEN);
+    if (!iface) {
+        errorf("ip6_iface_alloc() failure");
+        return -1;
+    }
+    if (ip6_iface_register(dev, iface) == -1) {
+        errorf("ip6_iface_register() failure");
         return -1;
     }
     if (net_run() == -1) {

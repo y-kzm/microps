@@ -115,8 +115,6 @@ net_device_close(struct net_device *dev)
 int
 net_device_add_iface(struct net_device *dev, struct net_iface *iface)
 {
-    struct net_iface *entry;
-
     iface->next = dev->ifaces;
     iface->dev = dev;
     dev->ifaces = iface;

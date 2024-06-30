@@ -60,23 +60,12 @@ typedef struct {
 #define IPV6_ADDR_SCOPE_ORGLOCAL     0x08
 #define IPV6_ADDR_SCOPE_GLOBAL       0x0e
 
-#define IPV6_IFACE_ANYCAST      0x01
-#define IPV6_IFACE_TENTATIVE    0x02
-#define IPV6_IFACE_DUPLICATED   0x04
-#define IPV6_IFACE_DETACHED     0x08
-#define IPV6_IFACE_DEPRECATED   0x10
-#define IPV6_IFACE_NODAD        0x20
-#define IPV6_IFACE_AUTOCONF     0x40
-#define IPV6_IFACE_TEMPORARY    0x80
-
 struct ip6_iface {
     struct net_iface iface;
     struct ip6_iface *next;
     ip6_addr_t addr;
-    ip6_addr_t netmask;
     uint8_t prefixlen;
     uint32_t scope;
-    uint8_t state;
 };
 
 extern int
@@ -84,7 +73,14 @@ ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
 ip6_addr_ntop(const ip6_addr_t n, char *p, size_t size);
 
-char *
+extern struct ip6_iface *
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen);
+extern int
+ip6_iface_register(struct net_device *dev, struct ip6_iface *iface);
+
+extern uint32_t 
+ip6_get_addr_scope(const ip6_addr_t *addr);
+extern char *
 ip6_protocol_name(uint8_t type);
 
 extern int

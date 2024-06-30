@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#define LOOPBACK_IPV6_ADDR "::1"
+#define LOOPBACK_IPV6_PREFIX_LEN 128
+
 const uint8_t test_data[] = {
     0x60, 0x0e, 0x0a, 0x00,
     0x00, 0x10, 0x3a, 0x40,

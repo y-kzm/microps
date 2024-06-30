@@ -7,7 +7,6 @@
 
 #include "util.h"
 #include "net.h"
-#include "arp.h"
 #include "ip6.h"
 
 struct ip6_hdr {
@@ -33,6 +32,9 @@ const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX =
     IPV6_ADDR(0xff02, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x01ff, 0x0000);
 const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX =
     IPV6_ADDR(0xff00, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000);
+
+/* NOTE: if you want to add/delete the entries after net_run(), you need to protect these lists with a mutex. */
+static struct ip6_iface *ifaces;
 
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
@@ -165,6 +167,43 @@ ip6_dump(const uint8_t *data, size_t len)
     funlockfile(stderr);
 }
 
+struct ip6_iface *
+ip6_iface_alloc(const char *addr, const uint8_t prefixlen)
+{
+    struct ip6_iface *iface;
+
+    iface = memory_alloc(sizeof(*iface));
+    if (!iface) {
+        errorf("memory_alloc() failure");
+        return NULL;
+    }
+    NET_IFACE(iface)->family = NET_IFACE_FAMILY_IPV6;
+    if (ip6_addr_pton(addr, &iface->addr) == -1) {
+        errorf("ip6_addr_pton() failure, addr=%s", addr);
+        memory_free(iface);
+        return NULL;
+    }
+    iface->prefixlen = prefixlen;
+    iface->scope = ip6_get_addr_scope(&iface->addr);
+    return iface;
+}
+
+int
+ip6_iface_register(struct net_device *dev, struct ip6_iface *iface)
+{
+    char addr[IPV6_ADDR_STR_LEN];
+
+    if (net_device_add_iface(dev, NET_IFACE(iface)) == -1) {
+        errorf("net_device_add_iface() failure");
+        return -1;
+    }
+    iface->next = ifaces;
+    ifaces = iface;
+    infof("registered: dev=%s, address=%s/%u",
+        dev->name, ip6_addr_ntop(iface->addr, addr, sizeof(addr)), iface->prefixlen);
+    return 0;
+}
+
 static void
 ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 {
@@ -185,6 +224,26 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     debugf("dev=%s, protocol=%s(0x%02x), len=%u",
         dev->name, ip6_protocol_name(hdr->next), hdr->next, ntoh16(hdr->plen) + IPV6_HDR_SIZE);
     ip6_dump(data, len);
+}
+
+#define IPV6_ADDR_IS_MULTICAST(addr)   IPV6_ADDR_COMP(addr, &IPV6_MULTICAST_ADDR_PREFIX, 1)
+#define IPV6_ADDR_IS_UNSPECIFIED(addr) IPV6_ADDR_COMP(addr, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN)
+#define IPV6_ADDR_IS_LOOPBACK(addr)    IPV6_ADDR_COMP(addr, &IPV6_LOOPBACK_ADDR, IPV6_ADDR_LEN)
+#define IPV6_ADDR_IS_LINKLOCAL(addr)   IPV6_ADDR_COMP(addr, &IPV6_LINK_LOCAL_ADDR_PREFIX, 8)
+#define IPV6_ADDR_MC_SCOPE(addr)       ((addr)->addr8[1] & 0x0f)
+
+uint32_t 
+ip6_get_addr_scope(const ip6_addr_t *addr)
+{
+    if (IPV6_ADDR_IS_MULTICAST(addr)) {
+        return IPV6_ADDR_MC_SCOPE(addr);
+    } else if (IPV6_ADDR_IS_LOOPBACK(addr)) {
+        return IPV6_ADDR_SCOPE_INTFACELOCAL;
+    } else if (IPV6_ADDR_IS_LINKLOCAL(addr)) {
+        return IPV6_ADDR_SCOPE_LINKLOCAL;
+    } else {
+        return IPV6_ADDR_SCOPE_GLOBAL;
+    }
 }
 
 char *
