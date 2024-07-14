@@ -16,6 +16,7 @@ OBJS = util.o \
        ip.o \
        ip6.o \
        icmp.o \
+       icmp6.o \
        udp.o \
        tcp.o \
        sock.o \

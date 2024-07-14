@@ -10,6 +10,12 @@
 #include "ether.h"
 #include "ip6.h"
 
+struct ip6_protocol {
+    struct ip6_protocol *next;
+    char name[16];
+    uint8_t type;
+    void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface);
+};
 
 struct ip6_hdr {
     uint32_t vtf;  /* ver(4) tc(8) flowlabel(20) */
@@ -37,6 +43,7 @@ const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX =
 
 /* NOTE: if you want to add/delete the entries after net_run(), you need to protect these lists with a mutex. */
 static struct ip6_iface *ifaces;
+static struct ip6_protocol *protocols;
 
 int
 ip6_addr_pton(const char *p, ip6_addr_t *n)
@@ -224,6 +231,8 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 {
     struct ip6_hdr *hdr;
     uint8_t v;
+    struct ip6_iface *iface;
+    struct ip6_protocol *proto;
 
     if (len < IPV6_HDR_SIZE) {
         errorf("too short");
@@ -235,10 +244,24 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
         errorf("ip version error: v=%u", v);
         return;
     }
-
+    iface = (struct ip6_iface *)net_device_get_iface(dev, NET_IFACE_FAMILY_IPV6);
+    if (!iface) {
+        /* iface is not registered to the device */
+        return;
+    }
+    if (IPV6_ADDR_COMP(&hdr->dst, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN)) {
+        /* for all hosts */
+        return;
+    }
     debugf("dev=%s, protocol=%s(0x%02x), len=%u",
         dev->name, ip6_protocol_name(hdr->next), hdr->next, ntoh16(hdr->plen) + IPV6_HDR_SIZE);
     ip6_dump(data, len);
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == hdr->next) {
+            proto->handler((uint8_t *)hdr + IPV6_HDR_SIZE, ntoh16(hdr->plen), hdr->src, hdr->dst, iface);
+            return;
+        }
+    }
 }
 
 static int
@@ -311,6 +334,44 @@ ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_ad
     return len;
 }
 
+int
+ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface))
+{
+    struct ip6_protocol *entry;
+
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            errorf("already exists, type=%s(0x%02x), exist=%s(0x%02x)", name, type, entry->name, entry->type);
+            return -1;
+        }
+    }
+    entry = memory_alloc(sizeof(*entry));
+    if (!entry) {
+        errorf("memory_alloc() failure");
+        return -1;
+    }
+    strncpy(entry->name, name, sizeof(entry->name)-1);
+    entry->type = type;
+    entry->handler = handler;
+    entry->next = protocols;
+    protocols = entry;
+    infof("registered, type=%s(0x%02x)", entry->name, entry->type);
+    return 0;
+}
+
+char *
+ip6_protocol_name(uint8_t type)
+{
+    struct ip6_protocol *entry;
+
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            return entry->name;
+        }
+    }
+    return "UNKNOWN";
+}
+
 #define IPV6_ADDR_IS_MULTICAST(addr)   IPV6_ADDR_COMP(addr, &IPV6_MULTICAST_ADDR_PREFIX, 1)
 #define IPV6_ADDR_IS_UNSPECIFIED(addr) IPV6_ADDR_COMP(addr, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN)
 #define IPV6_ADDR_IS_LOOPBACK(addr)    IPV6_ADDR_COMP(addr, &IPV6_LOOPBACK_ADDR, IPV6_ADDR_LEN)
@@ -336,12 +397,6 @@ ip6_get_mcaddr_scope(const ip6_addr_t *addr)
         return -1;
     }
     return IPV6_ADDR_MC_SCOPE(addr);
-}
-
-char *
-ip6_protocol_name(uint8_t type)
-{
-    return "NOT IMPELEMENTED";
 }
 
 int

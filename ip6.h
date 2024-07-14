@@ -80,15 +80,19 @@ ip6_iface_register(struct net_device *dev, struct ip6_iface *iface);
 struct ip6_iface *
 ip6_iface_select(ip6_addr_t addr);
 
-ssize_t
+extern ssize_t
 ip6_output(uint8_t next, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst);
 
-extern uint32_t 
-ip6_get_addr_scope(const ip6_addr_t *addr);
-uint32_t 
-ip6_get_mcaddr_scope(const ip6_addr_t *addr);
+extern int
+ip6_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, struct ip6_iface *iface));
 extern char *
 ip6_protocol_name(uint8_t type);
+
+extern uint32_t
+ip6_get_addr_scope(const ip6_addr_t *addr);
+extern uint32_t
+ip6_get_mcaddr_scope(const ip6_addr_t *addr);
+
 
 extern int
 ip6_init(void);
