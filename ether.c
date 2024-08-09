@@ -119,8 +119,10 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     hdr = (struct ether_hdr *)frame;
     if (memcmp(dev->addr, hdr->dst, ETHER_ADDR_LEN) != 0) {
         if (memcmp(ETHER_ADDR_BROADCAST, hdr->dst, ETHER_ADDR_LEN) != 0) {
-            /* for other host */
-            return -1;
+            if (!(hdr->dst[0] == 0x33 && hdr->dst[1] == 0x33)) {
+                /* for other host */
+                return -1;
+            }
         }
     }
     type = ntoh16(hdr->type);
