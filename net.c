@@ -124,14 +124,20 @@ net_device_add_iface(struct net_device *dev, struct net_iface *iface)
 struct net_iface *
 net_device_get_iface(struct net_device *dev, int family)
 {
-    struct net_iface *entry;
+    struct net_iface *entry, *head = NULL;
+    struct net_iface **tail = &head;
 
     for (entry = dev->ifaces; entry; entry = entry->next) {
         if (entry->family == family) {
-            break;
+            *tail = entry;
+            tail = &entry->next;
         }
     }
-    return entry;
+    if (tail) {
+        *tail = NULL;
+    }
+
+    return head;
 }
 
 int

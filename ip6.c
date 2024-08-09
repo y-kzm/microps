@@ -233,6 +233,7 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     uint8_t v;
     struct ip6_iface *iface;
     struct ip6_protocol *proto;
+    char addr[IPV6_ADDR_STR_LEN];
 
     if (len < IPV6_HDR_SIZE) {
         errorf("too short");
@@ -248,13 +249,22 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
     if (!iface) {
         /* iface is not registered to the device */
         return;
+    } else {
+        /* find an iface which has IPv6 address that matches the destination address  */
+        struct ip6_iface *entry;
+        for (entry = ifaces; entry; entry = entry->next) {
+            if (IPV6_ADDR_COMP(&entry->addr, &hdr->dst, IPV6_ADDR_LEN)) {
+                iface = entry;
+                break;
+            }
+        }
     }
     if (IPV6_ADDR_COMP(&hdr->dst, &IPV6_UNSPECIFIED_ADDR, IPV6_ADDR_LEN)) {
         /* for all hosts */
         return;
     }
-    debugf("dev=%s, protocol=%s(0x%02x), len=%u",
-        dev->name, ip6_protocol_name(hdr->next), hdr->next, ntoh16(hdr->plen) + IPV6_HDR_SIZE);
+    debugf("dev=%s(%s), protocol=%s(0x%02x), len=%u",
+        dev->name, ip6_addr_ntop(iface->addr, addr, sizeof(addr)), ip6_protocol_name(hdr->next), hdr->next, ntoh16(hdr->plen) + IPV6_HDR_SIZE);
     ip6_dump(data, len);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->next) {
