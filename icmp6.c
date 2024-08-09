@@ -132,6 +132,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     icmp6_dump(data, len);
     switch (hdr->type) {
     case ICMPV6_TYPE_ECHO_REQUEST:
+        icmp6_output(ICMPV6_TYPE_ECHO_REPLY, 0, hdr->data, len - sizeof(*hdr), dst, src);
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
     case ICMPV6_TYPE_ROUTER_ADV:
@@ -143,6 +144,42 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         /* ignore */
         break;
     }
+}
+
+int
+icmp6_output(uint8_t type, uint8_t code, const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst)
+{
+    struct pseudo6_hdr pseudo;
+    uint16_t psum = 0;
+    uint8_t buf[ICMP6_BUFSIZ];
+    struct icmp6_hdr *hdr;
+    size_t msg_len;
+    char addr1[IPV6_ADDR_STR_LEN];
+    char addr2[IPV6_ADDR_STR_LEN];
+
+    if (len > ICMP6_BUFSIZ - sizeof(*hdr)) {
+        errorf("too long, len=%zu", len);
+        return -1;
+    }
+    hdr = (struct icmp6_hdr *)buf;
+    hdr->type = type;
+    hdr->code = code;
+    hdr->sum = 0;
+    memcpy(hdr->data, data, len);
+    IPV6_ADDR_COPY(&pseudo.src, &src, sizeof(pseudo.src));
+    IPV6_ADDR_COPY(&pseudo.dst, &dst, sizeof(pseudo.dst));
+    pseudo.len = hton32(len + sizeof(*hdr));
+    pseudo.zero[0] = pseudo.zero[1] = pseudo.zero[2] = 0;
+    pseudo.next = IPV6_PROTOCOL_ICMPV6;
+    psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
+    hdr->sum = cksum16((uint16_t *)hdr, len + sizeof(*hdr), psum);
+    msg_len = len + sizeof(*hdr);
+    debugf("%s => %s, type=%s(%u), len=%zu",
+        ip6_addr_ntop(src, addr1, sizeof(addr1)),
+        ip6_addr_ntop(dst, addr2, sizeof(addr2)),
+        icmp6_type_ntoa(type), type, msg_len);
+    icmp6_dump(buf, msg_len);
+    return ip6_output(IPV6_PROTOCOL_ICMPV6, buf, msg_len, src, dst);
 }
 
 int
