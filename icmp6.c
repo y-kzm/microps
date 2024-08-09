@@ -3,10 +3,9 @@
 #include <string.h>
 
 #include "util.h"
+#include "nd6.h"
 #include "ip6.h"
 #include "icmp6.h"
-
-#define ICMP6_BUFSIZ IPV6_PAYLOAD_SIZE_MAX
 
 struct pseudo6_hdr {
     ip6_addr_t src;
@@ -32,7 +31,7 @@ struct icmp6_echo {
     uint8_t data[];
 };
 
-static char *
+char *
 icmp6_type_ntoa(uint8_t type) {
     switch (type) {
     case ICMPV6_TYPE_DEST_UNREACH:
@@ -137,6 +136,8 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
     case ICMPV6_TYPE_ROUTER_SOL:
     case ICMPV6_TYPE_ROUTER_ADV:
     case ICMPV6_TYPE_NEIGHBOR_SOL:
+        nd6_ns_input(data, len, src, dst, iface);
+        break;
     case ICMPV6_TYPE_NEIGHBOR_ADV:
     case ICMPV6_TYPE_REDIRECT:
         break;
