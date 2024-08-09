@@ -61,12 +61,12 @@ main(int argc, char *argv[])
      * Test Code
      */
     ip6_addr_t src, dst;
-    size_t offset = IPV6_HDR_SIZE + ICMPV6_HDR_SIZE;
+    size_t offset = IPV6_HDR_SIZE + 4;
     ip6_addr_pton(LOOPBACK_IPV6_ADDR, &src);
     dst = src;
     while (!terminate) {
-        if (ip6_output(IPV6_PROTOCOL_ICMPV6, test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
-            errorf("net_device_output() failure");
+        if (icmp6_output(ICMPV6_TYPE_ECHO_REQUEST, 0, test_data + offset, sizeof(test_data) - offset, src, dst) == -1) {
+            errorf("icmp6_output() failure");
             break;
         }
         sleep(1);
