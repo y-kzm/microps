@@ -68,6 +68,16 @@ struct ip6_iface {
     uint32_t scope;
 };
 
+#define IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN 13 /* ff02::1:ff00:0/104 */
+
+extern const ip6_addr_t IPV6_UNSPECIFIED_ADDR;
+extern const ip6_addr_t IPV6_LOOPBACK_ADDR;
+extern const ip6_addr_t IPV6_LINK_LOCAL_ALL_NODES_ADDR;
+extern const ip6_addr_t IPV6_LINK_LOCAL_ALL_ROUTERS_ADDR;
+extern const ip6_addr_t IPV6_LINK_LOCAL_ADDR_PREFIX;
+extern const ip6_addr_t IPV6_SOLICITED_NODE_ADDR_PREFIX;
+extern const ip6_addr_t IPV6_MULTICAST_ADDR_PREFIX;
+
 extern int
 ip6_addr_pton(const char *p, ip6_addr_t *n);
 extern char *
