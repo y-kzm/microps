@@ -135,6 +135,7 @@ icmp6_input(const uint8_t *data, size_t len, ip6_addr_t src, ip6_addr_t dst, str
         break;
     case ICMPV6_TYPE_ROUTER_SOL:
     case ICMPV6_TYPE_ROUTER_ADV:
+        break;
     case ICMPV6_TYPE_NEIGHBOR_SOL:
         nd6_ns_input(data, len, src, dst, iface);
         break;
