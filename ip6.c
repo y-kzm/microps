@@ -9,6 +9,7 @@
 #include "net.h"
 #include "ether.h"
 #include "ip6.h"
+#include "nd6.h"
 
 struct ip6_protocol {
     struct ip6_protocol *next;
@@ -276,23 +277,27 @@ ip6_input(const uint8_t *data, size_t len, struct net_device *dev)
 
 static int
 ip6_output_device(struct ip6_iface *iface, const uint8_t *data, size_t len, ip6_addr_t dst)
-{
+{   
     uint8_t hwaddr[NET_DEVICE_ADDR_LEN] = {};
+    int ret;
 
-    /* NDP is not implemented */
     if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NEED_ARP) {
-        if (ip6_get_mcaddr_scope(&dst) == IPV6_ADDR_SCOPE_LINKLOCAL) {
-            //  Find multicast mac addr from dst addr (solicited node addr)
+        if (IPV6_ADDR_COMP(&dst, &IPV6_SOLICITED_NODE_ADDR_PREFIX, IPV6_SOLICITED_NODE_ADDR_PREFIX_LEN)) {
+                hwaddr[0] = 0x33;
+                hwaddr[1] = 0x33;
+                hwaddr[2] = dst.addr8[12];
+                hwaddr[3] = dst.addr8[13];
+                hwaddr[4] = dst.addr8[14];
+                hwaddr[5] = dst.addr8[15];
         } else {
-            // if (!nd6_resolve(iface, dst, hwaddr)) {
-            //     return -1;
-            // }
+            ret = nd6_resolve(dst, hwaddr, iface);
+            if (ret != ND6_RESOLVE_FOUND) {
+                return ret;
+            }
         }
     }
-    /* Hard coding for debug */
-    ether_addr_pton("ce:44:e3:98:83:e4", hwaddr);
 
-    return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);
+    return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IPV6, data, len, hwaddr);   
 }
 
 static ssize_t
